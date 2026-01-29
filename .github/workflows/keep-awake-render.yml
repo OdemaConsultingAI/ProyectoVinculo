@@ -3,6 +3,9 @@
 name: Keep Render awake
 
 on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/keep-awake-render.yml']
   schedule:
     # Cada 14 minutos (cron: minuto hora día mes día-semana)
     - cron: '*/14 * * * *'
