@@ -1,0 +1,10 @@
+# EAS Build: excluir archivos que no necesita el build
+# Evita subir docs y archivos que puedan causar problemas en el servidor
+*.md
+.git/
+node_modules/
+.expo/
+dist/
+web-build/
+*.log
+.env*.local

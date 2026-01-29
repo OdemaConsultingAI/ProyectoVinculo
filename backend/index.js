@@ -5,6 +5,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const Contacto = require('./models/Contacto');
 const Usuario = require('./models/Usuario');
+const Test = require('./models/Test');
 const { authenticateToken, generateToken } = require('./middleware/auth');
 const { errorHandler, createError, ERROR_CODES } = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
@@ -51,21 +52,32 @@ app.use(sanitizeInputs);
 // Rate limiting general
 app.use('/api/', apiLimiter);
 
-// Configuración de MongoDB Atlas
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/vinculosDB';
+// Configuración: solo MongoDB en la nube (Atlas). No se usa MongoDB local.
+const MONGODB_URI = process.env.MONGODB_URI;
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
-mongoose.connect(MONGODB_URI)
+const DB_NAME = 'vinculosDB';
+
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI no está configurado.");
+  console.error("💡 Configura la variable de entorno MONGODB_URI con tu connection string de MongoDB Atlas.");
+  console.error("   Ejemplo en .env: MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/vinculosDB?retryWrites=true&w=majority");
+  process.exit(1);
+}
+
+// Forzar siempre la base de datos vinculosDB (evita que use "test" por defecto)
+mongoose.connect(MONGODB_URI, { dbName: DB_NAME })
   .then(() => {
-    console.log("✅ Conexión a MongoDB exitosa");
-    console.log("📊 Estado de conexión:", mongoose.connection.readyState === 1 ? "Conectado" : "Desconectado");
+    console.log("✅ Conexión a MongoDB (nube) exitosa");
+    console.log("📊 Estado:", mongoose.connection.readyState === 1 ? "Conectado" : "Desconectado");
     console.log("🗄️  Base de datos:", mongoose.connection.name);
     console.log("🌐 Host:", mongoose.connection.host);
   })
   .catch(err => {
-    console.error("❌ Error de MongoDB:", err);
-    console.error("💡 Verifica que MONGODB_URI esté correctamente configurado en el archivo .env");
+    console.error("❌ Error de MongoDB:", err.message);
+    console.error("💡 Verifica MONGODB_URI en .env (local) o en Render (producción).");
+    process.exit(1);
   });
 
 mongoose.connection.on('connected', () => {
@@ -109,6 +121,12 @@ app.get('/api/health', async (req, res, next) => {
 // POST - Registro de nuevo usuario
 app.post('/api/auth/register', registerLimiter, validateRegister, normalizeEmail, async (req, res, next) => {
   try {
+    // En producción, si MongoDB no está conectado (ej. cold start), devolver 503 para reintentar
+    if (mongoose.connection.readyState !== 1) {
+      console.warn('⚠️ Register: MongoDB no conectado, readyState=', mongoose.connection.readyState);
+      return next(createError('Base de datos no disponible. Espera unos segundos e intenta de nuevo.', ERROR_CODES.DATABASE_ERROR, 503));
+    }
+
     const { email, password, nombre } = req.body;
 
     // Verificar si el usuario ya existe
@@ -140,6 +158,8 @@ app.post('/api/auth/register', registerLimiter, validateRegister, normalizeEmail
       }
     });
   } catch (error) {
+    console.error('❌ Error en registro:', error.message, error.name, error.code || '');
+    if (error.stack) console.error(error.stack);
     next(error); // Pasar error al errorHandler
   }
 });
@@ -446,6 +466,71 @@ app.delete('/api/contacto', authenticateToken, async (req, res) => {
     res.json({ message: 'Contacto eliminado', contacto: eliminado });
   } catch (error) {
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ============================================
+// RUTAS DE TEST (requieren autenticación)
+// ============================================
+
+// GET - Listar todos los registros test del usuario
+app.get('/api/test', authenticateToken, async (req, res, next) => {
+  try {
+    const items = await Test.find({ usuarioId: req.user.id }).sort({ createdAt: -1 });
+    res.json(items);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST - Crear registro test
+app.post('/api/test', authenticateToken, async (req, res, next) => {
+  try {
+    const { nombre, valor, activo } = req.body;
+    if (!nombre || typeof nombre !== 'string' || !nombre.trim()) {
+      return next(createError('El campo nombre es obligatorio', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const nuevo = new Test({
+      usuarioId: req.user.id,
+      nombre: nombre.trim(),
+      valor: valor != null ? String(valor) : '',
+      activo: activo !== undefined ? Boolean(activo) : true
+    });
+    const guardado = await nuevo.save();
+    res.status(201).json(guardado);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// PUT - Actualizar registro test
+app.put('/api/test/:id', authenticateToken, validateObjectId, async (req, res, next) => {
+  try {
+    const item = await Test.findOne({ _id: req.params.id, usuarioId: req.user.id });
+    if (!item) {
+      return next(createError('Registro no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    const { nombre, valor, activo } = req.body;
+    if (nombre !== undefined) item.nombre = String(nombre).trim();
+    if (valor !== undefined) item.valor = String(valor);
+    if (activo !== undefined) item.activo = Boolean(activo);
+    await item.save();
+    res.json(item);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE - Eliminar registro test
+app.delete('/api/test/:id', authenticateToken, validateObjectId, async (req, res, next) => {
+  try {
+    const eliminado = await Test.findOneAndDelete({ _id: req.params.id, usuarioId: req.user.id });
+    if (!eliminado) {
+      return next(createError('Registro no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    res.json({ message: 'Registro eliminado', item: eliminado });
+  } catch (error) {
+    next(error);
   }
 });
 

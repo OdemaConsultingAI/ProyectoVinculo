@@ -121,3 +121,75 @@ Authorization: Bearer {{token}}
 {
   "nombre": "Updated Contact"
 }
+
+### ============================================
+### RUTAS DE TEST (tabla test)
+### Sustituye @token por el token que devuelve el login (ej. test 6 o 8)
+### Sustituye @testId por el _id que devuelve "Test POST válido" para PUT/DELETE
+### ============================================
+@testId = aqui_el_id_del_registro_creado
+
+### 14. Test GET /api/test - Sin token (debe fallar 401)
+GET {{baseUrl}}/api/test
+
+### 15. Test GET /api/test - Con token (debe listar registros)
+GET {{baseUrl}}/api/test
+Authorization: Bearer {{token}}
+
+### 16. Test POST /api/test - Sin token (debe fallar 401)
+POST {{baseUrl}}/api/test
+Content-Type: application/json
+
+{
+  "nombre": "Prueba",
+  "valor": "123"
+}
+
+### 17. Test POST /api/test - Sin nombre (debe fallar 400)
+POST {{baseUrl}}/api/test
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "valor": "solo valor"
+}
+
+### 18. Test POST /api/test - Válido (crear registro; copia el _id para PUT/DELETE)
+POST {{baseUrl}}/api/test
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nombre": "Mi registro de prueba",
+  "valor": "abc",
+  "activo": true
+}
+
+### 19. Test PUT /api/test/:id - ID inválido (debe fallar)
+PUT {{baseUrl}}/api/test/invalid-id
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nombre": "Actualizado",
+  "activo": false
+}
+
+### 20. Test PUT /api/test/:id - Válido (usa el _id del POST anterior en @testId)
+PUT {{baseUrl}}/api/test/{{testId}}
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nombre": "Nombre actualizado",
+  "valor": "nuevo valor",
+  "activo": false
+}
+
+### 21. Test DELETE /api/test/:id - ID inválido (debe fallar)
+DELETE {{baseUrl}}/api/test/invalid-id
+Authorization: Bearer {{token}}
+
+### 22. Test DELETE /api/test/:id - Válido (borra el registro; usa @testId)
+DELETE {{baseUrl}}/api/test/{{testId}}
+Authorization: Bearer {{token}}

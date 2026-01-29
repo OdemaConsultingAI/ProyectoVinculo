@@ -1,9 +1,30 @@
 # 🔧 Solución: Error 500 en Render (Backend)
 
 ## Problema
-La app muestra: `Error interno del servidor` (status 500) al intentar hacer login o registro.
+La app muestra: `Error interno del servidor` (status 500) al intentar hacer login o **registro**.
 
-Esto significa que el backend en Render está respondiendo, pero hay un error interno (probablemente variables de entorno faltantes o MongoDB no conectado).
+Esto significa que el backend en Render está respondiendo, pero hay un error interno (variables de entorno, MongoDB no conectado o cold start).
+
+---
+
+## 🚨 Si ves 500 al registrar: revisa los Logs en Render
+
+1. Entra a **Render** → tu servicio **proyectovinculo** → pestaña **Logs**.
+2. Intenta registrar de nuevo desde la app y mira qué aparece en los logs.
+3. Busca líneas como:
+   - `❌ Error en registro: <mensaje>` → ahí verás la causa real (MongoDB, JWT, etc.).
+   - `⚠️ Register: MongoDB no conectado` → la base aún no estaba lista (cold start).
+
+**Posibles causas del 500 en registro:**
+
+| Lo que ves en Logs | Causa | Qué hacer |
+|--------------------|--------|-----------|
+| `MongoDB no conectado` o `readyState` distinto de 1 | Cold start o base desconectada | Espera 10–20 s y vuelve a intentar registrar. Si sigue, revisa `MONGODB_URI` en Render. |
+| `JWT_SECRET` o error al firmar token | Falta o error en `JWT_SECRET` | Añade `JWT_SECRET` en Environment (Render) y redespliega. |
+| `MongoNetworkError` / `MongoServerSelectionError` | No puede conectar a Atlas | Revisa `MONGODB_URI` y Network Access en MongoDB Atlas (permite `0.0.0.0/0` si quieres). |
+| Nada nuevo en logs | El error ocurre antes de nuestro log | Comprueba que `MONGODB_URI` y `JWT_SECRET` estén en Render (ver pasos abajo). |
+
+Si en lugar de 500 recibes **503** con mensaje tipo *"Base de datos no disponible. Espera unos segundos..."*, es **cold start**: espera unos segundos y vuelve a intentar.
 
 ---
 

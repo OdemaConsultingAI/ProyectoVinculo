@@ -148,7 +148,7 @@ Sustituye en esta línea:
 - `TU-REPO` → el nombre del repo (ej: `proyecto-vinculo`).
 
 ```powershell
-git remote add origin https://github.com/TU-USUARIO/TU-REPO.git
+git remote add origin https://github.com/OdemaConsultingAI/Proyectovinculo.git
 ```
 
 Ejemplo real:

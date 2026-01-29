@@ -1,20 +1,29 @@
+// Servidor simplificado (legacy). El servidor principal es index.js (solo MongoDB nube).
+require('dotenv').config();
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const Contacto = require('./models/Contacto');
 
 const app = express();
+const MONGODB_URI = process.env.MONGODB_URI;
 
 app.use(cors());
 app.use(express.json());
 
-mongoose.connect('mongodb://127.0.0.1:27017/vinculosDB')
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI no configurado. Usa .env con tu connection string de MongoDB Atlas.");
+  process.exit(1);
+}
+
+mongoose.connect(MONGODB_URI)
   .then(() => {
-    console.log("✅ Conexión a MongoDB exitosa");
-    console.log("📊 Estado de conexión:", mongoose.connection.readyState === 1 ? "Conectado" : "Desconectado");
+    console.log("✅ Conexión a MongoDB (nube) exitosa");
+    console.log("📊 Estado:", mongoose.connection.readyState === 1 ? "Conectado" : "Desconectado");
   })
   .catch(err => {
-    console.error("❌ Error de MongoDB:", err);
+    console.error("❌ Error de MongoDB:", err.message);
+    process.exit(1);
   });
 
 mongoose.connection.on('connected', () => {

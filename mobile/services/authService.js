@@ -34,10 +34,9 @@ export const register = async (email, password, nombre) => {
     }
 
     if (!response.ok) {
-      const processedError = processError({
-        response: { status: response.status, data }
-      });
-      return { success: false, error: processedError.message };
+      // 409 = email ya registrado; usar mensaje del backend
+      const message = data?.error || getErrorMessage(data) || `Error ${response.status}`;
+      return { success: false, error: message };
     }
 
     // Guardar token y usuario
@@ -47,19 +46,14 @@ export const register = async (email, password, nombre) => {
     console.log('✅ Usuario registrado exitosamente');
     return { success: true, token: data.token, usuario: data.usuario };
   } catch (error) {
-    const processedError = processError(error);
-    console.error('❌ Error en registro:', processedError);
-    console.error('❌ Stack:', error.stack);
-    
-    // Mensajes de error más específicos
+    console.error('❌ Error en registro:', error?.message || error);
     if (error.message === 'Network request failed') {
       return { 
         success: false, 
         error: `No se pudo conectar al servidor. Verifica que:\n1. El servidor esté corriendo\n2. La IP sea correcta: ${API_BASE_URL}\n3. Tengas conexión a internet` 
       };
     }
-    
-    return { success: false, error: `Error de conexión: ${error.message}` };
+    return { success: false, error: getErrorMessage(error) || `Error de conexión: ${error?.message}` };
   }
 };
 
@@ -91,8 +85,8 @@ export const login = async (email, password) => {
     }
 
     if (!response.ok) {
-      console.error('❌ Error en respuesta:', data);
-      return { success: false, error: data.error || 'Credenciales inválidas' };
+      const message = data?.error || getErrorMessage(data) || 'Credenciales inválidas';
+      return { success: false, error: message };
     }
 
     // Guardar token y usuario
@@ -102,8 +96,7 @@ export const login = async (email, password) => {
     console.log('✅ Login exitoso');
     return { success: true, token: data.token, usuario: data.usuario };
   } catch (error) {
-    const processedError = processError(error);
-    return { success: false, error: processedError.message };
+    return { success: false, error: getErrorMessage(error) || error?.message || 'Error de conexión' };
   }
 };
 
