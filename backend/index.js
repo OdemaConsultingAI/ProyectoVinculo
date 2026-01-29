@@ -28,11 +28,13 @@ const app = express();
 // Security headers
 app.use(helmet());
 
-// CORS configuration
+// CORS configuration (en producción, si ALLOWED_ORIGINS está vacío, permitir todos para app móvil)
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
-    ? process.env.ALLOWED_ORIGINS?.split(',') || ['https://tu-dominio.com']
-    : '*', // En desarrollo permitir todos
+    ? (process.env.ALLOWED_ORIGINS && process.env.ALLOWED_ORIGINS.trim() 
+        ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim()) 
+        : '*')
+    : '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
