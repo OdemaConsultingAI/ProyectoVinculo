@@ -1,0 +1,123 @@
+### Archivo de pruebas HTTP para validar las nuevas validaciones y seguridad
+### Puedes usar este archivo con extensiones como REST Client en VS Code
+
+@baseUrl = http://localhost:3000
+@token = tu_token_aqui
+
+### 1. Health Check
+GET {{baseUrl}}/api/health
+
+### 2. Test Registro - Email inválido (debe fallar)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "email-invalido",
+  "password": "123456",
+  "nombre": "Test"
+}
+
+### 3. Test Registro - Contraseña corta (debe fallar)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "123",
+  "nombre": "Test"
+}
+
+### 4. Test Registro - Contraseña sin letras (debe fallar)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "123456",
+  "nombre": "Test"
+}
+
+### 5. Test Registro - Nombre inválido (debe fallar)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "test123",
+  "nombre": "T"
+}
+
+### 6. Test Registro - Válido (debe funcionar)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "test123",
+  "nombre": "Test User"
+}
+
+### 7. Test Login - Email inválido (debe fallar)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "email-invalido",
+  "password": "test123"
+}
+
+### 8. Test Login - Sin contraseña (debe fallar)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": ""
+}
+
+### 9. Test Rate Limiting - Múltiples intentos de login (el 6to debe fallar)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "wrongpassword"
+}
+
+### 10. Test Sanitización - Email con espacios (debe normalizarse)
+POST {{baseUrl}}/api/auth/register
+Content-Type: application/json
+
+{
+  "email": "  TEST@EXAMPLE.COM  ",
+  "password": "test123",
+  "nombre": "Test User"
+}
+
+### 11. Test Crear Contacto - Sin autenticación (debe fallar)
+POST {{baseUrl}}/api/contacto
+Content-Type: application/json
+
+{
+  "nombre": "Test Contact",
+  "telefono": "1234567890"
+}
+
+### 12. Test Crear Contacto - Con autenticación pero teléfono inválido (debe fallar)
+POST {{baseUrl}}/api/contacto
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nombre": "Test Contact",
+  "telefono": "123"
+}
+
+### 13. Test Actualizar Contacto - ID inválido (debe fallar)
+PUT {{baseUrl}}/api/contacto/invalid-id
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "nombre": "Updated Contact"
+}
