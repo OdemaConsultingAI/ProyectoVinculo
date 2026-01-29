@@ -27,6 +27,7 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
+import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   loadContacts, 
@@ -2905,10 +2906,15 @@ export default function VinculosScreen() {
           </View>
           <View style={styles.headerRight}>
             <View style={styles.contadorContainer}>
-              {/* Icono offline si no hay conexión - nube tachada en rojo */}
+              {/* Icono offline si no hay conexión */}
               {!isOnline && (
                 <Ionicons name="cloud-offline-outline" size={18} color={COLORES.urgente} style={{ marginRight: 4 }} />
               )}
+              {/* Indicador PC / Nube según ambiente */}
+              <View style={styles.sourceBadge}>
+                <Ionicons name={API_SOURCE_ICON} size={14} color={COLORES.textoSuave} />
+                <Text style={styles.sourceBadgeText}>{API_SOURCE_LABEL}</Text>
+              </View>
               <Ionicons name="person" size={24} color={COLORES.textoSuave} />
               <Text style={styles.contador}>{vinculos.length}</Text>
             </View>
@@ -3483,6 +3489,20 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: '700',
     color: COLORES.texto,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: COLORES.fondoSecundario,
+    borderRadius: 12,
+  },
+  sourceBadgeText: {
+    fontSize: 12,
+    color: COLORES.textoSecundario,
+    fontWeight: '500',
   },
   leyenda: {
     flexDirection: 'row',

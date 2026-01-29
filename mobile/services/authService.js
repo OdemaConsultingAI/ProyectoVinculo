@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../constants/api';
+import { API_BASE_URL } from '../constants/config';
 
 const TOKEN_KEY = '@vinculo_token';
 const USER_KEY = '@vinculo_user';
@@ -163,10 +163,12 @@ export const isAuthenticated = async () => {
   try {
     const token = await getToken();
     if (!token) {
+      console.log('🔐 No hay token almacenado');
       return false;
     }
 
     // Verificar que el token sea válido haciendo una petición al servidor
+    console.log('🔐 Verificando token en:', `${API_BASE_URL}/api/auth/verify`);
     const response = await fetch(`${API_BASE_URL}/api/auth/verify`, {
       method: 'GET',
       headers: {
@@ -174,10 +176,23 @@ export const isAuthenticated = async () => {
       },
     });
 
-    return response.ok;
+    if (response.ok) {
+      console.log('✅ Token válido');
+      return true;
+    } else {
+      console.log('❌ Token inválido o expirado');
+      return false;
+    }
   } catch (error) {
-    console.error('Error verificando autenticación:', error);
-    return false;
+    // Si es error de red, simplemente retornar false (mostrará login)
+    // No bloquear la app por problemas de conexión
+    if (error.name === 'AbortError' || error.message.includes('Network request failed') || error.message.includes('Failed to fetch')) {
+      console.warn('⚠️ No se pudo verificar autenticación (sin conexión o servidor no disponible):', API_BASE_URL);
+      console.warn('💡 La app mostrará la pantalla de login');
+    } else {
+      console.error('❌ Error verificando autenticación:', error.message);
+    }
+    return false; // Retornar false para mostrar login
   }
 };
 

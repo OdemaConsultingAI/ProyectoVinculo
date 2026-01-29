@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
+import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import { getConnectionStatus, getPendingSyncCount } from '../services/syncService';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes'];
@@ -286,10 +287,15 @@ export default function TareasScreen() {
       <View style={styles.header}>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Text style={styles.headerTitle}>Tareas</Text>
-          {/* Icono offline si no hay conexión - nube tachada en rojo */}
+          {/* Icono offline si no hay conexión */}
           {!isOnline && (
             <Ionicons name="cloud-offline-outline" size={18} color={COLORES.urgente} />
           )}
+          {/* Indicador PC / Nube según ambiente */}
+          <View style={styles.sourceBadge}>
+            <Ionicons name={API_SOURCE_ICON} size={14} color={COLORES.textoSuave} />
+            <Text style={styles.sourceBadgeText}>{API_SOURCE_LABEL}</Text>
+          </View>
         </View>
         <Text style={styles.headerSubtitle}>
           {tareasFiltradas.length} {tareasFiltradas.length === 1 ? 'tarea' : 'tareas'}
@@ -375,6 +381,20 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: COLORES.textoSecundario,
     marginTop: 4,
+  },
+  sourceBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    backgroundColor: COLORES.fondoSecundario,
+    borderRadius: 12,
+  },
+  sourceBadgeText: {
+    fontSize: 12,
+    color: COLORES.textoSecundario,
+    fontWeight: '500',
   },
   filtrosContainer: {
     flexDirection: 'row',

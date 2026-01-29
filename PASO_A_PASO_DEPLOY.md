@@ -111,7 +111,9 @@ O usar: https://randomkeygen.com/ (sección "CodeIgniter Encryption Keys")
 1. Render comenzará a construir automáticamente
 2. Verás los logs en tiempo real
 3. Esperar 2-5 minutos
-4. Cuando termine, verás: **"Your service is live at https://vinculos-backend.onrender.com"**
+4. Cuando termine, verás: **"Your service is live at https://proyectovinculo.onrender.com"**
+
+**✅ Tu URL de producción es:** `https://proyectovinculo.onrender.com`
 
 ---
 
@@ -139,9 +141,11 @@ Invoke-WebRequest -Uri "https://vinculos-backend.onrender.com/api/health" -UseBa
 Cambiar la línea de producción:
 ```javascript
 production: {
-  API_BASE_URL: 'https://vinculos-backend.onrender.com', // ⚠️ Tu URL real de Render
+  API_BASE_URL: 'https://proyectovinculo.onrender.com', // ✅ Tu URL de Render
 },
 ```
+
+**⚠️ IMPORTANTE:** No incluyas la barra final (`/`) al final de la URL.
 
 ### 9.2 Para probar en desarrollo:
 - La app seguirá usando la IP local mientras `__DEV__` sea `true`
