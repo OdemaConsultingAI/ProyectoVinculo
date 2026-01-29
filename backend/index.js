@@ -26,6 +26,9 @@ const {
 
 const app = express();
 
+// Detrás de un proxy (Render, etc.): confiar en X-Forwarded-For para rate limit e IP
+app.set('trust proxy', 1);
+
 // Security headers
 app.use(helmet());
 
@@ -53,16 +56,26 @@ app.use(sanitizeInputs);
 app.use('/api/', apiLimiter);
 
 // Configuración: solo MongoDB en la nube (Atlas). No se usa MongoDB local.
-const MONGODB_URI = process.env.MONGODB_URI;
+let MONGODB_URI = process.env.MONGODB_URI;
 const PORT = process.env.PORT || 3000;
 const HOST = process.env.HOST || '0.0.0.0';
 
 const DB_NAME = 'vinculosDB';
 
-if (!MONGODB_URI) {
-  console.error("❌ MONGODB_URI no está configurado.");
-  console.error("💡 Configura la variable de entorno MONGODB_URI con tu connection string de MongoDB Atlas.");
-  console.error("   Ejemplo en .env: MONGODB_URI=mongodb+srv://usuario:password@cluster.mongodb.net/vinculosDB?retryWrites=true&w=majority");
+// Diagnóstico para Render: ver qué llega (sin mostrar contraseña)
+const uriRaw = process.env.MONGODB_URI;
+if (!uriRaw || typeof uriRaw !== 'string') {
+  console.error("❌ MONGODB_URI no está configurado (vacío o no definido).");
+  console.error("💡 En Render: Environment → Add Variable → Key: MONGODB_URI, Value: tu URI que empiece por mongodb+srv://");
+  process.exit(1);
+}
+MONGODB_URI = uriRaw.trim();
+const validScheme = MONGODB_URI.startsWith('mongodb://') || MONGODB_URI.startsWith('mongodb+srv://');
+if (!validScheme) {
+  console.error("❌ MONGODB_URI no empieza por mongodb:// o mongodb+srv://");
+  console.error("   Recibido (primeros 30 caracteres):", JSON.stringify(MONGODB_URI.substring(0, 30)));
+  console.error("   Longitud total:", MONGODB_URI.length);
+  console.error("💡 En Render → Environment, el VALOR de MONGODB_URI debe ser solo la URI (sin comillas, sin 'MONGODB_URI=' delante).");
   process.exit(1);
 }
 
