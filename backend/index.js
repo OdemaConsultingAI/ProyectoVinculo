@@ -62,14 +62,21 @@ const HOST = process.env.HOST || '0.0.0.0';
 
 const DB_NAME = 'vinculosDB';
 
-// Diagnóstico para Render: ver qué llega (sin mostrar contraseña)
-const uriRaw = process.env.MONGODB_URI;
+// Leer URI y corregir si en Render pegaron "MONGODB_URI=valor" en el valor
+let uriRaw = process.env.MONGODB_URI;
 if (!uriRaw || typeof uriRaw !== 'string') {
   console.error("❌ MONGODB_URI no está configurado (vacío o no definido).");
   console.error("💡 En Render: Environment → Add Variable → Key: MONGODB_URI, Value: tu URI que empiece por mongodb+srv://");
   process.exit(1);
 }
-MONGODB_URI = uriRaw.trim();
+uriRaw = uriRaw.trim();
+// Si pegaron "MONGODB_URI=mongodb+srv://..." como valor, usar solo la parte de la URI
+if (uriRaw.startsWith('MONGODB_URI=')) {
+  MONGODB_URI = uriRaw.replace(/^MONGODB_URI=/, '').trim();
+  console.warn("⚠️ MONGODB_URI contenía el nombre de la variable; se usó solo la URI. En Render, pon solo la URI en el valor.");
+} else {
+  MONGODB_URI = uriRaw;
+}
 const validScheme = MONGODB_URI.startsWith('mongodb://') || MONGODB_URI.startsWith('mongodb+srv://');
 if (!validScheme) {
   console.error("❌ MONGODB_URI no empieza por mongodb:// o mongodb+srv://");
