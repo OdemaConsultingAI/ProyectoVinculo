@@ -73,6 +73,14 @@ No es obligatorio para que el deployment “funcione”; es para estar más tran
 
 ---
 
+## Fase 2: App instalable (EAS Build)
+
+- **`mobile/eas.json`** creado (perfiles preview y production, APK para Android).
+- **`mobile/app.json`** actualizado: nombre "Vínculos", package `com.vinculos.app`.
+- **Guía paso a paso:** ver **`DEPLOYMENT_FASE2.md`**.
+
+---
+
 ## Resumen
 
 - **Deployment listo:** backend en Render, app usando la nube, registro/login OK.

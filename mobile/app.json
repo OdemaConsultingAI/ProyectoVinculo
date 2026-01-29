@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "mobile",
-    "slug": "mobile",
+    "name": "Vínculos",
+    "slug": "vinculos-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -25,7 +25,7 @@
       "networkSecurityConfig": {
         "cleartextTrafficPermitted": true
       },
-      "package": "com.anonymous.mobile"
+      "package": "com.vinculos.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
