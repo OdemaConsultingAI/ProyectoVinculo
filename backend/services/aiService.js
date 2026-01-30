@@ -3,8 +3,10 @@
  * Uso low-cost: ~$0.006/min Whisper + ~$0.001 por petición GPT-4o-mini.
  */
 
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
 const OpenAI = require('openai');
-const { toFile } = require('openai');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LIMITE_PETICIONES_GRATIS = 10;
@@ -19,21 +21,33 @@ function getClient() {
 
 /**
  * Transcribe audio a texto con Whisper (modelo whisper-1).
+ * En Node el SDK requiere un stream o path; usamos archivo temporal + createReadStream.
  * @param {Buffer} audioBuffer - Buffer del archivo de audio (m4a, mp3, etc.)
  * @param {string} [mimeType] - Tipo MIME, ej. 'audio/mp4', 'audio/mpeg'
  * @returns {Promise<string>} Texto transcrito
  */
 async function transcribe(audioBuffer, mimeType = 'audio/mp4') {
-  const client = getClient();
   const extension = mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : 'm4a';
-  // Whisper en Node requiere un File-like; toFile() convierte el Buffer correctamente
-  const file = await toFile(audioBuffer, `audio.${extension}`, { type: mimeType });
-  const transcription = await client.audio.transcriptions.create({
-    file,
-    model: 'whisper-1',
-    response_format: 'text'
-  });
-  return typeof transcription === 'string' ? transcription : (transcription.text || '');
+  const tmpPath = path.join(os.tmpdir(), `whisper-${Date.now()}-${Math.random().toString(36).slice(2)}.${extension}`);
+  let stream;
+  try {
+    fs.writeFileSync(tmpPath, audioBuffer);
+    stream = fs.createReadStream(tmpPath);
+    const client = getClient();
+    const transcription = await client.audio.transcriptions.create({
+      file: stream,
+      model: 'whisper-1',
+      response_format: 'text'
+    });
+    return typeof transcription === 'string' ? transcription : (transcription.text || '');
+  } finally {
+    try {
+      if (stream && typeof stream.destroy === 'function') stream.destroy();
+      if (fs.existsSync(tmpPath)) fs.unlinkSync(tmpPath);
+    } catch (e) {
+      // ignorar errores al limpiar
+    }
+  }
 }
 
 /**
