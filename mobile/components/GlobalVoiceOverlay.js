@@ -48,6 +48,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
   const [recordingElapsed, setRecordingElapsed] = useState(0);
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
   const recordingActiveRef = useRef(false);
+  const transcribeGenRef = useRef(0);
   const [vinculos, setVinculos] = useState([]);
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8) + TAB_BAR_OFFSET;
@@ -85,13 +86,15 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     };
   }, [voiceRecording]);
 
-  // Transcribir cuando se abre el modal
+  // Transcribir cuando se abre el modal (ignorar respuestas obsoletas si el efecto se disparó dos veces)
   useEffect(() => {
     if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
+    const gen = ++transcribeGenRef.current;
     setVoiceTranscribing(true);
     setVoicePreviewTranscription(null);
     transcribeVoiceTemp(voicePreviewTempId).then((result) => {
       setVoiceTranscribing(false);
+      if (gen !== transcribeGenRef.current) return;
       if (result.success) {
         setVoicePreviewTranscription(result.texto || '');
         const contactoId = voicePreviewContactoFromModal?.id ?? result.contactoId ?? null;
@@ -112,7 +115,9 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
       }
     }).catch(() => {
       setVoiceTranscribing(false);
-      setVoicePreviewTranscription('Error al transcribir');
+      if (gen === transcribeGenRef.current) {
+        setVoicePreviewTranscription('Error al transcribir');
+      }
     });
   }, [modalVoicePreviewVisible, voicePreviewTempId]);
 
@@ -169,7 +174,17 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     }
   };
 
+  const handleHistorialPress = () => {
+    navigationRef?.current?.navigate('Gestos', { openHistorialGestos: true });
+  };
+
+  const handleSwipePress = () => {
+    navigationRef?.current?.navigate('Vínculos', { openSwipeMode: true });
+  };
+
   const showFloatingButtons = currentRouteName !== 'Configuración';
+  const showHistorialButton = currentRouteName === 'Gestos';
+  const showSwipeButton = currentRouteName === 'Vínculos';
 
   const closeVoicePreview = async () => {
     if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
@@ -223,6 +238,20 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                 <Ionicons name="add-circle" size={26} color="white" />
               </View>
             </TouchableOpacity>
+            {showSwipeButton && (
+              <TouchableOpacity style={[styles.floatingSwipe, { bottom: bottomInset + 24 }]} onPress={handleSwipePress} activeOpacity={0.8}>
+                <View style={styles.floatingButtonSwipeInner}>
+                  <Ionicons name="swap-horizontal" size={24} color="white" />
+                </View>
+              </TouchableOpacity>
+            )}
+            {showHistorialButton && (
+              <TouchableOpacity style={[styles.floatingHistorial, { bottom: bottomInset + 24 }]} onPress={handleHistorialPress} activeOpacity={0.8}>
+                <View style={styles.floatingButtonRegarInner}>
+                  <Ionicons name="time-outline" size={24} color="white" />
+                </View>
+              </TouchableOpacity>
+            )}
           </>
         )}
       </View>
@@ -447,6 +476,49 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.25,
     shadowRadius: 3.84,
     elevation: 10,
+  },
+  floatingHistorial: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 10,
+  },
+  floatingSwipe: {
+    position: 'absolute',
+    bottom: 24,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 10,
+  },
+  floatingButtonSwipeInner: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: COLORES.urgente,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: COLORES.urgente,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 8,
   },
   floatingButtonInner: {
     width: 56,

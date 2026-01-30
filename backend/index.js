@@ -765,7 +765,11 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     if (error?.status === 401) {
       return res.status(503).json({ error: 'OPENAI_API_KEY inválida o expirada.' });
     }
-    next(error);
+    // Devolver siempre JSON con mensaje claro (evita que el cliente reciba HTML y falle el parse)
+    const msg = error?.message || 'Error al transcribir.';
+    return res.status(503).json({
+      error: msg.includes('API') || msg.includes('OpenAI') ? 'No se pudo transcribir el audio. Verifica tu conexión o intenta de nuevo.' : msg,
+    });
   }
 });
 

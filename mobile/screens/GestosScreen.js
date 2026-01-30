@@ -23,13 +23,18 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
-import { TIPOS_DE_GESTO_DISPLAY } from '../constants/tiposDeGesto';
+import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
 import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
 const FILTROS_TIPO = ['Todas', ...TIPOS_DE_GESTO_DISPLAY];
+
+const getGestoConfig = (clasificacion) => 
+  GESTO_ICON_CONFIG[clasificacion] || GESTO_ICON_CONFIG['Otro'];
+
+const limpiarTelefono = (telf) => (telf || '').replace(/[^\d+]/g, '');
 
 export default function GestosScreen() {
   const route = useRoute();
@@ -382,14 +387,18 @@ export default function GestosScreen() {
     setModalCrearTareaVisible(true);
   };
 
-  // Abrir modal "Crear gesto" cuando se navega con openCrearGesto (ej. desde el botón + del overlay)
+  // Abrir modal "Crear gesto" o "Historial" cuando se navega desde el overlay
   useFocusEffect(
     useCallback(() => {
       if (route.params?.openCrearGesto) {
         navigation.setParams({ openCrearGesto: undefined });
         abrirModalCrearTarea();
       }
-    }, [route.params?.openCrearGesto, navigation])
+      if (route.params?.openHistorialGestos) {
+        navigation.setParams({ openHistorialGestos: undefined });
+        setModalHistorialVisible(true);
+      }
+    }, [route.params?.openCrearGesto, route.params?.openHistorialGestos, navigation])
   );
 
   const cerrarModalCrearTarea = () => {
@@ -497,6 +506,17 @@ export default function GestosScreen() {
     );
   };
 
+  const ejecutarAccionGesto = (item, contacto) => {
+    const clasificacion = item.clasificacion || 'Otro';
+    const config = getGestoConfig(clasificacion);
+    const telefono = item.contactoTelefono || contacto?.telefono;
+    if (config.action === 'call' && telefono) {
+      Linking.openURL(`tel:${limpiarTelefono(telefono)}`);
+    } else if (config.action === 'whatsapp' && telefono) {
+      Linking.openURL(`whatsapp://send?phone=${limpiarTelefono(telefono)}`);
+    }
+  };
+
   const renderTarea = ({ item, index }) => {
     const contacto = contactos.find(c => c._id === item.contactoId);
     const tareaIndex = item.tareaIndex !== undefined ? item.tareaIndex : 
@@ -507,6 +527,10 @@ export default function GestosScreen() {
         const itemFechaEjecucion = item.fechaEjecucion ? item.fechaEjecucion.getTime() : null;
         return tFechaCreacion === itemFechaCreacion && tFechaEjecucion === itemFechaEjecucion;
       }) ?? -1);
+
+    const clasificacion = item.clasificacion || 'Otro';
+    const gestoConfig = getGestoConfig(clasificacion);
+    const tieneAccion = gestoConfig.action && (item.contactoTelefono || contacto?.telefono);
 
     return (
       <Swipeable
@@ -525,14 +549,15 @@ export default function GestosScreen() {
               style={styles.editTareaButtonLeft}
               onPress={() => abrirEditarTarea(item)}
             >
-              <Ionicons name="pencil-outline" size={20} color={COLORES.textoSecundario} />
+              <Ionicons name="brush-outline" size={22} color={COLORES.agua} />
             </TouchableOpacity>
             
             <View style={styles.tareaInfo}>
+              {/* Fila 1: Acción (con emoji) a la izquierda, nombre del contacto a la derecha */}
               <View style={styles.tareaHeader}>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
                   <Text style={styles.tareaTitulo} numberOfLines={1}>
-                    {item.clasificacion || 'Gesto'}
+                    {gestoConfig.emoji} {clasificacion}
                   </Text>
                   {item.esRecurrente && (
                     <View style={styles.recurrenteBadge}>
@@ -540,41 +565,48 @@ export default function GestosScreen() {
                     </View>
                   )}
                 </View>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <View style={[
-                    styles.prioridadBadge,
-                    { backgroundColor: getPrioridadColor(item.fechaEjecucion) }
-                  ]}>
-                    <Text style={styles.prioridadText}>
-                      {formatearFecha(item.fechaEjecucion)}
-                    </Text>
-                  </View>
+                <Text style={styles.tareaContactoDerecha} numberOfLines={1}>
+                  {item.contactoNombre || '—'}
+                </Text>
+              </View>
+            
+              <Text style={styles.tareaDescripcion} numberOfLines={2}>
+                {item.descripcion}
+              </Text>
+            
+              <View style={styles.tareaMeta}>
+                <View style={[
+                  styles.prioridadBadge,
+                  { backgroundColor: getPrioridadColor(item.fechaEjecucion) }
+                ]}>
+                  <Text style={styles.prioridadText}>
+                    {formatearFecha(item.fechaEjecucion)}
+                  </Text>
+                </View>
+                <View style={styles.horaContainer}>
+                  <Ionicons name="time-outline" size={14} color={COLORES.textoSecundario} />
+                  <Text style={styles.horaText}>{formatearHora(item.fechaEjecucion)}</Text>
                 </View>
               </View>
-            
-            <Text style={styles.tareaDescripcion} numberOfLines={2}>
-              {item.descripcion}
-            </Text>
-            
-            <View style={styles.tareaMeta}>
-              <View style={styles.contactoInfo}>
-                {contacto?.foto ? (
-                  <Image source={{ uri: contacto.foto }} style={styles.contactoAvatar} />
-                ) : (
-                  <View style={styles.contactoAvatarPlaceholder}>
-                    <Ionicons name="person" size={16} color={COLORES.textoSecundario} />
-                  </View>
-                )}
-                <Text style={styles.contactoNombre}>{item.contactoNombre}</Text>
-              </View>
-              
-              <View style={styles.horaContainer}>
-                <Ionicons name="time-outline" size={14} color={COLORES.textoSecundario} />
-                <Text style={styles.horaText}>{formatearHora(item.fechaEjecucion)}</Text>
-              </View>
+
+              {/* Botón de acción: icono + nombre (Llamar, Enviar mensaje, etc.) */}
+              {tieneAccion ? (
+                <TouchableOpacity
+                  style={[styles.accionButton, { backgroundColor: gestoConfig.color }]}
+                  onPress={() => ejecutarAccionGesto(item, contacto)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name={gestoConfig.icon} size={20} color="white" />
+                  <Text style={styles.accionButtonText}>{clasificacion}</Text>
+                </TouchableOpacity>
+              ) : (
+                <View style={[styles.accionButton, styles.accionButtonInactivo]}>
+                  <Text style={styles.accionButtonEmoji}>{gestoConfig.emoji}</Text>
+                  <Text style={styles.accionButtonTextInactivo}>{clasificacion}</Text>
+                </View>
+              )}
             </View>
           </View>
-        </View>
         </View>
       </Swipeable>
     );
@@ -915,29 +947,7 @@ export default function GestosScreen() {
         </View>
       </Modal>
 
-      {/* Botón flotante Nuevo gesto (+) debajo del micrófono */}
-      <TouchableOpacity
-        style={styles.floatingButtonNuevaTarea}
-        onPress={abrirModalCrearTarea}
-        activeOpacity={0.8}
-        accessibilityLabel="Crear nuevo gesto"
-      >
-        <View style={styles.floatingButtonNuevaTareaInner}>
-          <Ionicons name="add" size={28} color="white" />
-        </View>
-      </TouchableOpacity>
-
-      {/* Botón flotante Historial (abajo a la derecha, como en Vínculos) */}
-      <TouchableOpacity
-        style={styles.floatingButtonHistorial}
-        onPress={() => setModalHistorialVisible(true)}
-        activeOpacity={0.8}
-        accessibilityLabel="Ver historial de gestos"
-      >
-        <View style={styles.floatingButtonHistorialInner}>
-          <Ionicons name="time-outline" size={24} color="white" />
-        </View>
-      </TouchableOpacity>
+      {/* Botones + y reloj historial están en el overlay global (GlobalVoiceOverlay) */}
 
       {/* Modal Historial */}
       <Modal
@@ -2017,6 +2027,43 @@ const styles = StyleSheet.create({
     color: COLORES.texto,
     flex: 1,
     marginRight: 8,
+  },
+  tareaContactoDerecha: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORES.textoSecundario,
+    maxWidth: '45%',
+    textAlign: 'right',
+  },
+  accionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    marginTop: 12,
+    gap: 8,
+  },
+  accionButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: 'white',
+  },
+  accionButtonInactivo: {
+    backgroundColor: COLORES.fondoSecundario,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  accionButtonEmoji: {
+    fontSize: 18,
+  },
+  accionButtonTextInactivo: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: COLORES.textoSecundario,
   },
   prioridadBadge: {
     paddingHorizontal: 10,

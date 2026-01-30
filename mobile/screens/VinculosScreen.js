@@ -229,15 +229,21 @@ export default function VinculosScreen() {
     };
   }, []);
 
-  // Abrir modal de interacciones cuando se navega desde Tareas con openContactId / openContact; abrir Regar con openRegar
+  // Abrir modal de interacciones, modo swipe o contacto cuando se navega desde overlay/otra pestaña
   useFocusEffect(
     useCallback(() => {
       const contact = route.params?.openContact;
       const id = route.params?.openContactId;
       const openRegar = route.params?.openRegar;
+      const openSwipeMode = route.params?.openSwipeMode;
       if (openRegar) {
         navigation.setParams({ openRegar: undefined });
         abrirModalRegar();
+        return;
+      }
+      if (openSwipeMode) {
+        navigation.setParams({ openSwipeMode: undefined });
+        activarModoJuego();
         return;
       }
       if (contact) {
@@ -255,7 +261,7 @@ export default function VinculosScreen() {
         setModalInteraccionesVisible(true);
         navigation.setParams({ openContactId: undefined });
       }
-    }, [route.params?.openContactId, route.params?.openContact, route.params?.openRegar, vinculos, navigation])
+    }, [route.params?.openContactId, route.params?.openContact, route.params?.openRegar, route.params?.openSwipeMode, vinculos, navigation])
   );
 
   // Sincronizar contacto actual para voz: cuando el modal de interacciones está abierto, el overlay usará este contacto al grabar

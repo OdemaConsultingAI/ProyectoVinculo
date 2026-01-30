@@ -31,3 +31,16 @@ export function getDisplayPart(full) {
 
 /** Lista solo para mostrar en filtro (sin paréntesis). Usar en chips y desplegables. */
 export const TIPOS_DE_GESTO_DISPLAY = TIPOS_DE_GESTO_FULL.map(getDisplayPart);
+
+/**
+ * Icono (emoji), nombre Ionicons y color por tipo de gesto. action: 'call' | 'whatsapp' | null (otros sin enlace directo).
+ */
+export const GESTO_ICON_CONFIG = {
+  'Llamar': { emoji: '📞', icon: 'call', color: '#34C759', action: 'call' },
+  'Visitar': { emoji: '🏠', icon: 'home', color: '#FF9800', action: null },
+  'Enviar mensaje': { emoji: '💬', icon: 'chatbubble', color: '#25D366', action: 'whatsapp' },
+  'Cumpleaños': { emoji: '🎂', icon: 'gift', color: '#E91E63', action: null },
+  'Regalo': { emoji: '🎁', icon: 'gift', color: '#9C27B0', action: null },
+  'Evento': { emoji: '☕', icon: 'calendar', color: '#795548', action: null },
+  'Otro': { emoji: '🤝', icon: 'ellipsis-horizontal', color: '#5A6C7D', action: null },
+};

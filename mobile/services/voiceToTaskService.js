@@ -423,16 +423,29 @@ export async function transcribeVoiceTemp(tempId) {
       },
       body: JSON.stringify({ tempId: tempId.trim() }),
     });
-    const data = await response.json().catch(() => ({}));
+    const rawText = await response.text();
+    let data = {};
+    try {
+      data = rawText ? JSON.parse(rawText) : {};
+    } catch (_) {
+      log('4/4 Respuesta no es JSON, status:', response.status, 'preview:', rawText?.slice(0, 100));
+      return {
+        success: false,
+        error: !response.ok
+          ? `Error del servidor (${response.status}). Intenta de nuevo.`
+          : 'La respuesta del servidor no es válida. Intenta de nuevo.',
+      };
+    }
     log('4/4 Respuesta POST transcribe status:', response.status, 'body keys:', Object.keys(data));
     if (response.status === 404) {
-      log('4/4 *** 404 en POST /api/ai/voice-temp/transcribe *** Redeploy backend en Render.');
+      log('4/4 *** 404 en POST /api/ai/voice-temp/transcribe *** Nota no encontrada o ya borrada.');
     }
     if (!response.ok) {
-      log('4/4 ERROR:', response.status, data.error || data.message || data);
-      const errorMsg = response.status === 429
-        ? (data.error || data.message || 'Has agotado tus consultas de IA por hoy. Pásate a Premium para más.')
-        : (data.error || data.message || `Error ${response.status}`);
+      const errorMsg = data.error || data.message || data.errorMessage
+        || (response.status === 404 ? 'Nota no encontrada. Cierra y graba de nuevo.' : null)
+        || (response.status === 429 ? 'Has agotado tus consultas de IA por hoy. Pásate a Premium para más.' : null)
+        || `Error del servidor (${response.status}). Intenta de nuevo.`;
+      log('4/4 ERROR:', response.status, errorMsg);
       return { success: false, error: errorMsg };
     }
     const texto = typeof data.texto === 'string' ? data.texto : '';
@@ -451,10 +464,10 @@ export async function transcribeVoiceTemp(tempId) {
       model: data.model,
     };
   } catch (e) {
-    log('4/4 EXCEPCIÓN:', e.message);
+    log('4/4 EXCEPCIÓN:', e.message, e.name);
     return {
       success: false,
-      error: e.message && e.message.includes('Network') ? 'Sin conexión.' : (e.message || 'Error al transcribir.'),
+      error: e.message && (e.message.includes('Network') || e.message.includes('Failed to fetch')) ? 'Sin conexión. Revisa tu red.' : (e.message || 'Error al transcribir. Intenta de nuevo.'),
     };
   }
 }

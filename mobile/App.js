@@ -95,7 +95,13 @@ export default function App() {
         <SafeAreaProvider>
           <VoiceGlobalProvider>
             <View style={styles.root}>
-              <NavigationContainer ref={navigationRef}>
+              <NavigationContainer
+                ref={navigationRef}
+                onStateChange={(state) => {
+                  const route = state?.routes?.[state.index];
+                  if (route?.name) setCurrentRouteName(route.name);
+                }}
+              >
                 <Tab.Navigator screenOptions={{ headerShown: false }}>
                   <Tab.Screen 
                     name="Vínculos" 
