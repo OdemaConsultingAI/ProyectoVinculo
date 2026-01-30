@@ -363,10 +363,10 @@ export async function uploadVoiceTemp(fileUri) {
 }
 
 /**
- * Transcribe la nota temporal con OpenAI Whisper. No borra la nota.
- * Usa POST /api/ai/voice-temp/transcribe (mismo prefijo que upload; evita 404 con GET en Render).
+ * Transcribe la nota temporal y clasifica (interacción vs tarea) con GPT-4o-mini.
+ * Usa POST /api/ai/voice-temp/transcribe (transcribe + extract con prompt dinámico).
  * @param {string} tempId - ID devuelto por uploadVoiceTemp
- * @returns {Promise<{ success: true, texto: string } | { success: false, error: string }>}
+ * @returns {Promise<{ success: true, texto: string, tipo: string, vinculo: string, tarea: string, descripcion: string, fecha: string, contactoId?: string, contactoNombre?: string, model?: string } | { success: false, error: string }>}
  */
 export async function transcribeVoiceTemp(tempId) {
   const url = `${VOICE_TEMP_URL}/transcribe`;
@@ -405,8 +405,19 @@ export async function transcribeVoiceTemp(tempId) {
       };
     }
     const texto = typeof data.texto === 'string' ? data.texto : '';
-    log('4/4 OK transcripción longitud:', texto.length);
-    return { success: true, texto };
+    log('4/4 OK transcripción longitud:', texto.length, 'tipo:', data.tipo);
+    return {
+      success: true,
+      texto,
+      tipo: data.tipo || 'tarea',
+      vinculo: data.vinculo || 'Sin asignar',
+      tarea: data.tarea || '',
+      descripcion: data.descripcion || data.tarea || '',
+      fecha: data.fecha || new Date().toISOString().slice(0, 10),
+      contactoId: data.contactoId || null,
+      contactoNombre: data.contactoNombre || data.vinculo || 'Sin asignar',
+      model: data.model,
+    };
   } catch (e) {
     log('4/4 EXCEPCIÓN:', e.message);
     return {

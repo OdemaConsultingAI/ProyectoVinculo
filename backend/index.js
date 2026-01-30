@@ -25,7 +25,7 @@ const {
   apiLimiter
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
-const { voiceToTaskStructured, transcribe, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
 
@@ -632,7 +632,17 @@ app.get('/api/ai/voice-temp', authenticateToken, (req, res) => {
 app.post('/api/ai/voice-temp', authenticateToken, postVoiceTemp);
 app.delete('/api/ai/voice-temp/:id', authenticateToken, deleteVoiceTempById);
 
-// POST transcribir (mismo prefijo que upload/delete; evita 404 con GET en algunos proxies)
+// GET - Devuelve el prompt actual de clasificación voz (espacio editable: backend/prompts/voice-to-action.txt)
+app.get('/api/ai/voice-prompt', authenticateToken, (req, res) => {
+  try {
+    const prompt = getVoicePrompt();
+    res.json({ prompt, model: MODEL_VOICE });
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Error al leer el prompt.' });
+  }
+});
+
+// POST transcribir + clasificar (interacción vs tarea) con GPT-4o-mini y prompt dinámico
 app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, next) => {
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
     return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
@@ -651,7 +661,28 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
       return next(createError('El audio está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
     }
     const texto = await transcribe(buffer, 'audio/mp4');
-    res.json({ texto: texto || '' });
+    const textoTrim = (texto || '').trim();
+    if (!textoTrim) {
+      return res.json({ texto: '', tipo: 'tarea', vinculo: 'Sin asignar', tarea: '', descripcion: '', fecha: new Date().toISOString().slice(0, 10) });
+    }
+    const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre _id').lean();
+    const nombresContactos = contactos.map(c => (c.nombre || '').trim()).filter(Boolean);
+    const extracted = await extractVoiceAction(textoTrim, nombresContactos);
+    const vinculoNorm = (extracted.vinculo || '').toLowerCase().trim();
+    const contactoMatch = contactos.find(c => (c.nombre || '').toLowerCase().trim() === vinculoNorm);
+    const contactoId = contactoMatch ? contactoMatch._id.toString() : null;
+    const contactoNombre = contactoMatch ? (contactoMatch.nombre || extracted.vinculo) : (extracted.vinculo || 'Sin asignar');
+    res.json({
+      texto: textoTrim,
+      tipo: extracted.tipo,
+      vinculo: extracted.vinculo,
+      tarea: extracted.tarea,
+      descripcion: extracted.descripcion || extracted.tarea,
+      fecha: extracted.fecha,
+      contactoId,
+      contactoNombre,
+      model: MODEL_VOICE
+    });
   } catch (error) {
     console.error('Error en POST voice-temp/transcribe:', error?.message || error);
     if (error?.status === 400 || error?.message?.includes('Invalid') || error?.message?.includes('file')) {

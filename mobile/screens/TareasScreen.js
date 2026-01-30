@@ -83,9 +83,22 @@ export default function TareasScreen() {
     setVoicePreviewTranscription(null);
     transcribeVoiceTemp(voicePreviewTempId).then((result) => {
       setVoiceTranscribing(false);
-      console.log('[TareasScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length } : { error: result.error });
-      if (result.success) setVoicePreviewTranscription(result.texto || '');
-      else setVoicePreviewTranscription(result.error || 'Error al transcribir');
+      console.log('[TareasScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length, tipo: result.tipo } : { error: result.error });
+      if (result.success) {
+        setVoicePreviewTranscription(result.texto || '');
+        setVoicePreviewData({
+          texto: result.texto || '',
+          tipo: result.tipo || 'tarea',
+          vinculo: result.vinculo || 'Sin asignar',
+          tarea: result.tarea || '',
+          descripcion: result.descripcion || result.tarea || '',
+          fecha: result.fecha || new Date().toISOString().slice(0, 10),
+          contactoId: result.contactoId || null,
+          contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
+        });
+      } else {
+        setVoicePreviewTranscription(result.error || 'Error al transcribir');
+      }
     }).catch((err) => {
       console.log('[TareasScreen] transcribeVoiceTemp excepción:', err?.message);
       setVoiceTranscribing(false);
@@ -841,7 +854,11 @@ export default function TareasScreen() {
               {voicePreviewData && (
               <>
                 <TouchableOpacity
-                  style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonTask]}
+                  style={[
+                    styles.modalVoicePreviewButton,
+                    styles.modalVoicePreviewButtonTask,
+                    (voicePreviewData.tipo === 'tarea') && styles.modalVoicePreviewButtonSuggested,
+                  ]}
                   onPress={async () => {
                     if (!voicePreviewData || !voicePreviewData.contactoId) {
                       Alert.alert('Aviso', 'No hay contacto asignado. Añade contactos para guardar como tarea.');
@@ -1492,6 +1509,15 @@ const styles = StyleSheet.create({
   },
   modalVoicePreviewButtonInteraction: {
     backgroundColor: COLORES.textoSecundario,
+  },
+  modalVoicePreviewButtonSuggested: {
+    borderWidth: 2,
+    borderColor: 'white',
+  },
+  modalVoicePreviewSuggestion: {
+    fontWeight: '600',
+    marginBottom: 8,
+    color: COLORES.agua,
   },
   modalVoicePreviewButtonText: {
     color: 'white',

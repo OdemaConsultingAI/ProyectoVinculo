@@ -1,6 +1,7 @@
 /**
- * Servicio de IA: Whisper (transcripción) + GPT-4o-mini (texto → tarea estructurada).
+ * Servicio de IA: Whisper (transcripción) + GPT-4o-mini (clasificación interacción vs tarea).
  * Uso low-cost: ~$0.006/min Whisper + ~$0.001 por petición GPT-4o-mini.
+ * El prompt de clasificación se lee de backend/prompts/voice-to-action.txt (editable).
  */
 
 const fs = require('fs');
@@ -11,6 +12,9 @@ const OpenAI = require('openai');
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LIMITE_PETICIONES_GRATIS = 10;
 const COSTE_ESTIMADO_POR_PETICION_USD = 0.001;
+
+/** Modelo fijo para voz → clasificación/extracción (bajo costo). */
+const MODEL_VOICE = 'gpt-4o-mini';
 
 function getClient() {
   if (!OPENAI_API_KEY || !OPENAI_API_KEY.trim()) {
@@ -76,7 +80,7 @@ Texto del usuario: "${texto}"
 Responde solo con el JSON, ejemplo: {"vinculo":"Juan","tarea":"Comprar libro de arte","fecha":"2026-02-05"}`;
 
   const completion = await client.chat.completions.create({
-    model: 'gpt-4o-mini',
+    model: MODEL_VOICE,
     messages: [
       { role: 'system', content: systemContent },
       { role: 'user', content: userContent }
@@ -113,10 +117,90 @@ async function voiceToTaskStructured(audioBuffer, mimeType, nombresContactos = [
   return { texto: texto.trim(), ...extracted };
 }
 
+/** Ruta del archivo de prompt (editable). */
+const PROMPT_FILE = path.join(__dirname, '..', 'prompts', 'voice-to-action.txt');
+
+const DEFAULT_VOICE_PROMPT = `Eres un asistente que analiza notas de voz y determina si son una INTERACCIÓN (algo que ya ocurrió) o una TAREA (algo a agendar).
+Devuelves ÚNICAMENTE un JSON válido con: "tipo" ("interacción"|"tarea"), "vinculo", "tarea", "descripcion", "fecha" (YYYY-MM-DD).`;
+
+/**
+ * Lee el prompt de clasificación desde backend/prompts/voice-to-action.txt.
+ * Si el archivo no existe o falla la lectura, devuelve el prompt por defecto.
+ * @returns {string}
+ */
+function getVoicePrompt() {
+  try {
+    if (fs.existsSync(PROMPT_FILE)) {
+      return fs.readFileSync(PROMPT_FILE, 'utf8').trim() || DEFAULT_VOICE_PROMPT;
+    }
+  } catch (e) {
+    console.warn('No se pudo leer prompt voice-to-action:', e?.message);
+  }
+  return DEFAULT_VOICE_PROMPT;
+}
+
+/**
+ * Clasifica la nota de voz en interacción o tarea y extrae datos.
+ * Usa siempre el modelo GPT-4o-mini y el prompt de voice-to-action.txt.
+ * @param {string} texto - Texto transcrito
+ * @param {string[]} nombresContactos - Nombres de contactos del usuario para desambiguar
+ * @returns {Promise<{ tipo: 'interacción'|'tarea', vinculo: string, tarea: string, descripcion: string, fecha: string }>}
+ */
+async function extractVoiceAction(texto, nombresContactos = []) {
+  const client = getClient();
+  const systemContent = getVoicePrompt();
+  const listaNombres = nombresContactos.length
+    ? `Lista de nombres de contactos del usuario (usa uno de estos si aplica): ${nombresContactos.join(', ')}.`
+    : '';
+  const userContent = `${listaNombres}
+
+Texto transcrito: "${texto}"
+
+Responde solo con el JSON, ejemplo: {"tipo":"tarea","vinculo":"Juan","tarea":"Comprar regalo","descripcion":"Comprar regalo para Juan","fecha":"2026-02-05"}`;
+
+  const completion = await client.chat.completions.create({
+    model: MODEL_VOICE,
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent }
+    ],
+    temperature: 0.2,
+    max_tokens: 256
+  });
+
+  const raw = completion.choices[0]?.message?.content?.trim() || '{}';
+  let parsed;
+  try {
+    const jsonStr = raw.replace(/^```json?\s*|\s*```$/g, '').trim();
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    parsed = {
+      tipo: 'tarea',
+      vinculo: 'Sin asignar',
+      tarea: texto || 'Tarea desde voz',
+      descripcion: texto || '',
+      fecha: new Date().toISOString().slice(0, 10)
+    };
+  }
+
+  const tipo = (parsed.tipo === 'interacción' || parsed.tipo === 'interaccion') ? 'interacción' : 'tarea';
+  const hoy = new Date().toISOString().slice(0, 10);
+  return {
+    tipo,
+    vinculo: typeof parsed.vinculo === 'string' ? parsed.vinculo.trim() : 'Sin asignar',
+    tarea: typeof parsed.tarea === 'string' ? parsed.tarea.trim() : (texto || ''),
+    descripcion: typeof parsed.descripcion === 'string' ? parsed.descripcion.trim() : (parsed.tarea || texto || ''),
+    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy
+  };
+}
+
 module.exports = {
   transcribe,
   textToTask,
   voiceToTaskStructured,
+  getVoicePrompt,
+  extractVoiceAction,
+  MODEL_VOICE,
   LIMITE_PETICIONES_GRATIS,
   COSTE_ESTIMADO_POR_PETICION_USD
 };
