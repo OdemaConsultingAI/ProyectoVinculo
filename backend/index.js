@@ -653,7 +653,13 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     const texto = await transcribe(buffer, 'audio/mp4');
     res.json({ texto: texto || '' });
   } catch (error) {
-    console.error('Error en POST voice-temp/transcribe:', error);
+    console.error('Error en POST voice-temp/transcribe:', error?.message || error);
+    if (error?.status === 400 || error?.message?.includes('Invalid') || error?.message?.includes('file')) {
+      return res.status(400).json({ error: error.message || 'Formato de audio no válido para Whisper.' });
+    }
+    if (error?.status === 401) {
+      return res.status(503).json({ error: 'OPENAI_API_KEY inválida o expirada.' });
+    }
     next(error);
   }
 });

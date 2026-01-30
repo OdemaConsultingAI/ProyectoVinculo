@@ -4,6 +4,7 @@
  */
 
 const OpenAI = require('openai');
+const { toFile } = require('openai');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LIMITE_PETICIONES_GRATIS = 10;
@@ -25,9 +26,10 @@ function getClient() {
 async function transcribe(audioBuffer, mimeType = 'audio/mp4') {
   const client = getClient();
   const extension = mimeType.includes('mpeg') || mimeType.includes('mp3') ? 'mp3' : 'm4a';
-  const file = new Blob([audioBuffer], { type: mimeType });
+  // Whisper en Node requiere un File-like; toFile() convierte el Buffer correctamente
+  const file = await toFile(audioBuffer, `audio.${extension}`, { type: mimeType });
   const transcription = await client.audio.transcriptions.create({
-    file: file,
+    file,
     model: 'whisper-1',
     response_format: 'text'
   });
