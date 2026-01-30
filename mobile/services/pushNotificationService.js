@@ -1,7 +1,9 @@
 /**
  * Notificaciones push – permisos, token Expo y envío al backend.
+ * En Expo Go (Android SDK 53+) las push remotas no están disponibles; usar development build.
  */
 
+import { Platform } from 'react-native';
 import * as Device from 'expo-device';
 import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
@@ -10,14 +12,25 @@ import { API_BASE_URL, fetchWithAuth } from '../constants/api';
 
 const STORAGE_KEY = '@vinculos_expo_push_token';
 
-// Comportamiento cuando la app está en primer plano (opcional)
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-  }),
-});
+/** True si estamos en Expo Go (push remotas no disponibles en Android SDK 53+). */
+function isExpoGo() {
+  return Constants.appOwnership === 'expo';
+}
+
+// Comportamiento cuando la app está en primer plano (en Expo Go Android no hay push remotas)
+try {
+  if (!isExpoGo() || Platform.OS !== 'android') {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowAlert: true,
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+      }),
+    });
+  }
+} catch (_) {
+  // Ignorar si expo-notifications no está disponible (p. ej. Expo Go Android SDK 53+)
+}
 
 /**
  * Solicita permiso de notificaciones y obtiene el Expo Push Token.
@@ -28,8 +41,18 @@ export async function registerForPushNotificationsAsync() {
   if (!Device.isDevice) {
     return null;
   }
+  // En Expo Go (Android SDK 53+) las push remotas fueron eliminadas; usar development build.
+  if (isExpoGo() && Platform.OS === 'android') {
+    return null;
+  }
 
-  const { status: existingStatus } = await Notifications.getPermissionsAsync();
+  let existingStatus;
+  try {
+    const result = await Notifications.getPermissionsAsync();
+    existingStatus = result.status;
+  } catch (e) {
+    return null;
+  }
   let finalStatus = existingStatus;
 
   if (existingStatus !== 'granted') {
@@ -76,8 +99,13 @@ export async function getStoredExpoPushToken() {
  * @returns { Promise<boolean> }
  */
 export async function hasNotificationPermission() {
-  const { status } = await Notifications.getPermissionsAsync();
-  return status === 'granted';
+  if (isExpoGo() && Platform.OS === 'android') return false;
+  try {
+    const { status } = await Notifications.getPermissionsAsync();
+    return status === 'granted';
+  } catch {
+    return false;
+  }
 }
 
 /**
