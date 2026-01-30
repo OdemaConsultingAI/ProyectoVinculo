@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import VinculosScreen from './screens/VinculosScreen';
@@ -63,23 +65,28 @@ export default function App() {
 
   if (showSplash) {
     return (
-      <ErrorBoundary>
-        <SplashScreen onLoadingComplete={handleSplashComplete} />
-      </ErrorBoundary>
+      <GestureHandlerRootView style={styles.root}>
+        <ErrorBoundary>
+          <SplashScreen onLoadingComplete={handleSplashComplete} />
+        </ErrorBoundary>
+      </GestureHandlerRootView>
     );
   }
 
   if (!authenticated) {
     return (
-      <ErrorBoundary>
-        <LoginScreen onLoginSuccess={handleLoginSuccess} />
-      </ErrorBoundary>
+      <GestureHandlerRootView style={styles.root}>
+        <ErrorBoundary>
+          <LoginScreen onLoginSuccess={handleLoginSuccess} />
+        </ErrorBoundary>
+      </GestureHandlerRootView>
     );
   }
 
   return (
-    <ErrorBoundary>
-      <NavigationContainer>
+    <GestureHandlerRootView style={styles.root}>
+      <ErrorBoundary>
+        <NavigationContainer>
         <Tab.Navigator screenOptions={{ headerShown: false }}>
           <Tab.Screen 
             name="Vínculos" 
@@ -105,6 +112,11 @@ export default function App() {
           </Tab.Screen>
         </Tab.Navigator>
       </NavigationContainer>
-    </ErrorBoundary>
+      </ErrorBoundary>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

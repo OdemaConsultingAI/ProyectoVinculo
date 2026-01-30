@@ -6,6 +6,7 @@ const helmet = require('helmet');
 const Contacto = require('./models/Contacto');
 const Usuario = require('./models/Usuario');
 const Test = require('./models/Test');
+const VoiceNoteTemp = require('./models/VoiceNoteTemp');
 const { authenticateToken, generateToken } = require('./middleware/auth');
 const { errorHandler, createError, ERROR_CODES } = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
@@ -23,6 +24,10 @@ const {
   changePasswordLimiter,
   apiLimiter
 } = require('./middleware/rateLimiter');
+const multer = require('multer');
+const { voiceToTaskStructured, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
 
 const app = express();
 
@@ -323,13 +328,283 @@ app.get('/api/auth/me', authenticateToken, async (req, res, next) => {
         id: usuario._id,
         email: usuario.email,
         nombre: usuario.nombre,
-        plan: usuario.plan || 'Free'
+        plan: usuario.plan || 'Free',
+        aiPeticionesHoy: usuario.aiPeticionesHoy ?? 0,
+        aiEstimatedCostUsd: usuario.aiEstimatedCostUsd ?? 0
       }
     });
   } catch (error) {
     next(error);
   }
 });
+
+// ============================================
+// RUTAS DE IA (voz → tarea)
+// ============================================
+
+// POST - Enviar audio, transcribir con Whisper, extraer tarea con GPT-4o-mini, guardar tarea
+app.post('/api/ai/voice-to-task', authenticateToken, upload.single('audio'), async (req, res, next) => {
+  try {
+    if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+      return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
+    }
+
+    if (!req.file || !req.file.buffer) {
+      return next(createError('Falta el archivo de audio', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const ultimoReset = usuario.aiUltimoResetFecha ? new Date(usuario.aiUltimoResetFecha) : null;
+    if (ultimoReset) {
+      ultimoReset.setHours(0, 0, 0, 0);
+      if (ultimoReset.getTime() < hoy.getTime()) {
+        usuario.aiPeticionesHoy = 0;
+        usuario.aiUltimoResetFecha = hoy;
+      }
+    } else {
+      usuario.aiUltimoResetFecha = hoy;
+    }
+
+    const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
+    if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
+      return next(createError(
+        `Has alcanzado el límite de ${LIMITE_PETICIONES_GRATIS} peticiones de voz por día. Vuelve mañana o mejora tu plan.`,
+        ERROR_CODES.VALIDATION_ERROR,
+        429
+      ));
+    }
+
+    const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre').lean();
+    const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
+
+    const mimeType = req.file.mimetype || 'audio/mp4';
+    const { texto, vinculo, tarea, fecha } = await voiceToTaskStructured(
+      req.file.buffer,
+      mimeType,
+      nombresContactos
+    );
+
+    let contacto = null;
+    if (vinculo && vinculo !== 'Sin asignar') {
+      const nombreNorm = vinculo.trim().toLowerCase();
+      contacto = await Contacto.findOne({
+        usuarioId: req.user.id,
+        $or: [
+          { nombre: { $regex: new RegExp(`^${nombreNorm}$`, 'i') } },
+          { nombre: { $regex: new RegExp(nombreNorm.replace(/\s+/g, '.*'), 'i') } }
+        ]
+      });
+    }
+    if (!contacto) {
+      contacto = await Contacto.findOne({ usuarioId: req.user.id }).sort({ updatedAt: -1 });
+    }
+    if (!contacto) {
+      await usuario.save();
+      return res.status(200).json({
+        message: 'No tienes contactos. Crea uno para asignar la tarea.',
+        texto,
+        vinculo,
+        tarea,
+        fecha,
+        contacto: null,
+        tareaCreada: null
+      });
+    }
+
+    const fechaEjecucion = new Date(fecha);
+    if (isNaN(fechaEjecucion.getTime())) {
+      fechaEjecucion.setTime(Date.now());
+    }
+
+    const nuevaTarea = {
+      fechaHoraCreacion: new Date(),
+      descripcion: tarea,
+      fechaHoraEjecucion: fechaEjecucion,
+      clasificacion: 'Otro',
+      completada: false
+    };
+    contacto.tareas = contacto.tareas || [];
+    contacto.tareas.push(nuevaTarea);
+    contacto.markModified('tareas');
+    await contacto.save();
+
+    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
+    usuario.aiEstimatedCostUsd = (usuario.aiEstimatedCostUsd ?? 0) + COSTE_ESTIMADO_POR_PETICION_USD;
+    await usuario.save();
+
+    logger.info('AI voice-to-task', { userId: req.user.id, contactoId: contacto._id, texto: texto?.slice(0, 80) });
+
+    res.status(201).json({
+      message: 'Tarea creada desde tu nota de voz',
+      texto,
+      vinculo,
+      tarea,
+      fecha,
+      contacto: { _id: contacto._id, nombre: contacto.nombre, tareas: contacto.tareas },
+      tareaCreada: nuevaTarea,
+      aiPeticionesRestantes: Math.max(0, LIMITE_PETICIONES_GRATIS - usuario.aiPeticionesHoy)
+    });
+  } catch (error) {
+    console.error('Error en voice-to-task:', error);
+    next(error);
+  }
+});
+
+// Helper: lógica común de voice-to-preview (buffer de audio ya disponible)
+async function handleVoicePreview(req, res, next, audioBuffer, mimeType = 'audio/mp4') {
+  try {
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    const hoy = new Date();
+    hoy.setHours(0, 0, 0, 0);
+    const ultimoReset = usuario.aiUltimoResetFecha ? new Date(usuario.aiUltimoResetFecha) : null;
+    if (ultimoReset) {
+      ultimoReset.setHours(0, 0, 0, 0);
+      if (ultimoReset.getTime() < hoy.getTime()) {
+        usuario.aiPeticionesHoy = 0;
+        usuario.aiUltimoResetFecha = hoy;
+      }
+    } else {
+      usuario.aiUltimoResetFecha = hoy;
+    }
+    const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
+    if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
+      return next(createError(
+        `Has alcanzado el límite de ${LIMITE_PETICIONES_GRATIS} peticiones de voz por día. Vuelve mañana.`,
+        ERROR_CODES.VALIDATION_ERROR,
+        429
+      ));
+    }
+    const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre').lean();
+    const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
+    const { texto, vinculo, tarea, fecha } = await voiceToTaskStructured(
+      audioBuffer,
+      mimeType,
+      nombresContactos
+    );
+    let contacto = null;
+    if (vinculo && vinculo !== 'Sin asignar') {
+      const nombreNorm = vinculo.trim().toLowerCase();
+      contacto = await Contacto.findOne({
+        usuarioId: req.user.id,
+        $or: [
+          { nombre: { $regex: new RegExp(`^${nombreNorm}$`, 'i') } },
+          { nombre: { $regex: new RegExp(nombreNorm.replace(/\s+/g, '.*'), 'i') } }
+        ]
+      });
+    }
+    if (!contacto) {
+      contacto = await Contacto.findOne({ usuarioId: req.user.id }).sort({ updatedAt: -1 });
+    }
+    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
+    usuario.aiEstimatedCostUsd = (usuario.aiEstimatedCostUsd ?? 0) + COSTE_ESTIMADO_POR_PETICION_USD;
+    await usuario.save();
+    const contactoId = contacto ? contacto._id.toString() : null;
+    const contactoNombre = contacto ? contacto.nombre : null;
+    res.status(200).json({
+      texto: texto || '',
+      vinculo: vinculo || 'Sin asignar',
+      tarea: tarea || '',
+      fecha: fecha || new Date().toISOString().slice(0, 10),
+      descripcion: tarea || texto || '',
+      contactoId,
+      contactoNombre,
+      aiPeticionesRestantes: Math.max(0, LIMITE_PETICIONES_GRATIS - usuario.aiPeticionesHoy)
+    });
+  } catch (error) {
+    console.error('Error en voice-to-preview:', error);
+    next(error);
+  }
+}
+
+// POST - Preview: acepta JSON con audio en base64 (evita problemas con multipart en React Native).
+app.post('/api/ai/voice-to-preview', authenticateToken, async (req, res, next) => {
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+    return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
+  }
+  const base64 = req.body && req.body.audioBase64;
+  if (!base64 || typeof base64 !== 'string') {
+    return next(createError('Envía JSON con campo "audioBase64" (audio en base64).', ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+  try {
+    const buffer = Buffer.from(base64, 'base64');
+    if (buffer.length === 0) {
+      return next(createError('El audio en base64 está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    return handleVoicePreview(req, res, next, buffer, 'audio/mp4');
+  } catch (e) {
+    return next(createError('audioBase64 inválido.', ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+});
+
+// ============================================
+// NOTAS DE VOZ TEMPORALES (base64, se borran al convertir o cerrar)
+// ============================================
+
+// Handlers compartidos (rutas bajo /api/voice/temp y /api/ai/voice-temp)
+async function postVoiceTemp(req, res, next) {
+  try {
+    const base64 = req.body && req.body.audioBase64;
+    if (!base64 || typeof base64 !== 'string') {
+      return next(createError('Envía JSON con campo "audioBase64".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const buffer = Buffer.from(base64, 'base64');
+    if (buffer.length === 0) {
+      return next(createError('El audio en base64 está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const doc = await VoiceNoteTemp.create({
+      usuarioId: req.user.id,
+      audioBase64: base64,
+      createdAt: new Date()
+    });
+    res.status(201).json({ tempId: doc._id.toString() });
+  } catch (error) {
+    console.error('Error en POST voice temp:', error);
+    next(error);
+  }
+}
+
+async function deleteVoiceTempById(req, res, next) {
+  try {
+    const id = req.params.id;
+    if (!id) {
+      return next(createError('Falta id de nota temporal.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const deleted = await VoiceNoteTemp.findOneAndDelete({
+      _id: id,
+      usuarioId: req.user.id
+    });
+    if (!deleted) {
+      return res.status(404).json({ message: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    res.status(200).json({ deleted: true });
+  } catch (error) {
+    console.error('Error en DELETE voice temp:', error);
+    next(error);
+  }
+}
+
+// Rutas bajo /api/voice/temp
+app.get('/api/voice/temp', authenticateToken, (req, res) => {
+  res.json({ voiceTemp: true, message: 'Usa POST para subir audio en base64.' });
+});
+app.post('/api/voice/temp', authenticateToken, postVoiceTemp);
+app.delete('/api/voice/temp/:id', authenticateToken, deleteVoiceTempById);
+
+// Rutas alias bajo /api/ai/ (por si el deploy en Render solo expone /api/ai/*)
+app.get('/api/ai/voice-temp', authenticateToken, (req, res) => {
+  res.json({ voiceTemp: true, message: 'Usa POST para subir audio en base64.' });
+});
+app.post('/api/ai/voice-temp', authenticateToken, postVoiceTemp);
+app.delete('/api/ai/voice-temp/:id', authenticateToken, deleteVoiceTempById);
 
 // ============================================
 // RUTAS DE CONTACTOS (requieren autenticación)

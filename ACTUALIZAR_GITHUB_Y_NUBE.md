@@ -62,8 +62,8 @@ Si te dice que no hay nada que commitear, es que no hay cambios nuevos; en ese c
 git push origin main
 ```
 
-- Si tu rama se llama `master` en lugar de `main`, usa:  
-  `git push origin master`
+- **Este proyecto usa la rama `main`.** No uses `master` (daría error: "src refspec master does not match any").
+- Si tu rama se llamara `master`, entonces usarías: `git push origin master`
 - Si te pide usuario y contraseña, **contraseña** = tu **Personal Access Token** de GitHub (no la contraseña de la cuenta).
 
 Después de esto, tu código ya está en GitHub.

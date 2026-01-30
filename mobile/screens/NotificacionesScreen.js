@@ -16,6 +16,7 @@ import { COLORES } from '../constants/colores';
 import { API_URL } from '../constants/api';
 
 const FRECUENCIAS = {
+  'Diario': 1,
   'Cada 2 días': 2,
   'Cada 3 días': 3,
   'Semanal': 7,

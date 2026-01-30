@@ -23,6 +23,8 @@ Esto significa que el backend en Render está respondiendo, pero hay un error in
 | `JWT_SECRET` o error al firmar token | Falta o error en `JWT_SECRET` | Añade `JWT_SECRET` en Environment (Render) y redespliega. |
 | `MongoNetworkError` / `MongoServerSelectionError` | No puede conectar a Atlas | Revisa `MONGODB_URI` y Network Access en MongoDB Atlas (permite `0.0.0.0/0` si quieres). |
 | Nada nuevo en logs | El error ocurre antes de nuestro log | Comprueba que `MONGODB_URI` y `JWT_SECRET` estén en Render (ver pasos abajo). |
+| **`Invalid scheme, expected connection string to start with "mongodb://" or "mongodb+srv://"`** | `MONGODB_URI` en Render está vacía, mal escrita o no configurada | En Render → Environment, añade o corrige **MONGODB_URI**. El valor debe ser **exactamente** la URI de Atlas que empieza por `mongodb+srv://...` (sin comillas extra, sin espacios). Ver PASO 6 abajo. |
+| **`X-Forwarded-For` / `trust proxy`** | Rate limit detrás del proxy de Render | Ya está corregido en el código con `trust proxy`. Haz push y redespliega. |
 
 Si en lugar de 500 recibes **503** con mensaje tipo *"Base de datos no disponible. Espera unos segundos..."*, es **cold start**: espera unos segundos y vuelve a intentar.
 
@@ -82,15 +84,20 @@ Copia el resultado y pégalo como valor de `JWT_SECRET` en Render.
 
 ---
 
-### PASO 6: Verificar MONGODB_URI
+### PASO 6: Verificar MONGODB_URI (obligatorio)
+
+Si en los logs ves **"Invalid scheme, expected connection string to start with mongodb:// or mongodb+srv://"**, la variable **MONGODB_URI** en Render no está bien configurada.
 
 1. Ve a https://cloud.mongodb.com
 2. Inicia sesión
 3. Ve a tu cluster → **"Connect"** → **"Connect your application"**
-4. Copia la connection string
-5. Reemplaza `<password>` con tu contraseña real de MongoDB
-6. Asegúrate de que termine con `/vinculosDB?retryWrites=true&w=majority`
-7. Pégala en Render como valor de `MONGODB_URI`
+4. Copia la connection string (empieza por `mongodb+srv://`)
+5. Reemplaza `<password>` con tu contraseña real de MongoDB (los caracteres especiales en la contraseña a veces hay que codificarlos en URL, por ejemplo `@` → `%40`)
+6. Asegúrate de que la URI termine con `/vinculosDB?retryWrites=true&w=majority` (o añade `/vinculosDB` antes de `?` si no está)
+7. En **Render** → tu servicio → **Environment** → variable **MONGODB_URI**:
+   - Si no existe, **Add** → Key: `MONGODB_URI`, Value: pega la URI completa (sin comillas).
+   - Si existe, **Edit** y pega de nuevo la URI correcta. Debe empezar por `mongodb+srv://` y no tener espacios ni comillas alrededor.
+8. Guarda y **redespliega** el servicio (Manual Deploy → Deploy latest commit, o espera al siguiente push).
 
 ---
 

@@ -1,2 +1,0 @@
-usuario:    ag_db_user
-contraseña: r8d8n60M8ucOeEzw

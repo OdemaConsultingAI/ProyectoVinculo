@@ -171,8 +171,25 @@ export const syncPendingChanges = async () => {
         failed.push(operation);
       }
     } catch (error) {
-      console.error('Error sincronizando operación:', error);
-      failed.push(operation);
+      const status = error.response?.status;
+      const isDuplicate = status === 409 || (error.message && error.message.includes('ya existe'));
+      const isNotFound = status === 404;
+      if (isDuplicate) {
+        // Recurso ya existe en el servidor (ej. contacto con mismo teléfono): considerar sincronizado
+        successful.push(operation);
+        if (__DEV__) {
+          console.log('🔄 Sync: recurso ya existía en servidor, operación descartada de cola:', operation.type);
+        }
+      } else if (isNotFound) {
+        // Contacto no existe en el servidor (borrado, ID temporal, etc.): quitar de cola y no reintentar
+        successful.push(operation);
+        if (__DEV__) {
+          console.warn('🔄 Sync: operación 404 (recurso no encontrado), se descarta de la cola:', operation.type, operation.contactoId);
+        }
+      } else {
+        console.error('Error sincronizando operación:', error);
+        failed.push(operation);
+      }
     }
   }
 

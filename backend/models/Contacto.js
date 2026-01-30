@@ -24,10 +24,16 @@ const contactoSchema = new mongoose.Schema({
     fechaHoraCreacion: { type: Date, default: Date.now },
     descripcion: String, // Notas de la tarea (puede ser diferente a la interacción)
     fechaHoraEjecucion: Date,
-    clasificacion: String, // 'Llamar', 'Visitar', 'Enviar mensaje', etc.
+    clasificacion: String, // 'Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', etc.
     completada: { type: Boolean, default: false },
     fechaHoraCompletado: Date, // Fecha y hora cuando se completó la tarea
-    interaccionRelacionada: String // ID o referencia a la interacción relacionada (opcional)
+    interaccionRelacionada: String, // ID o referencia a la interacción relacionada (opcional)
+    // Recurrencia: ej. cumpleaños anual
+    recurrencia: {
+      tipo: { type: String, enum: ['anual', 'mensual'], default: null },
+      fechaBase: Date // Para anual: mes/día que se repite cada año
+    },
+    completadoParaAno: [Number] // Años en que se completó (para recurrentes)
   }]
 }, {
   timestamps: true

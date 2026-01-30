@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import { getUser, logout, changePassword, upgradeToPremium, getCurrentUser } from '../services/authService';
+import NotificationBell from '../components/NotificationBell';
 
 export default function ConfiguracionScreen({ onLogout }) {
   const [usuario, setUsuario] = useState(null);
@@ -132,8 +133,11 @@ export default function ConfiguracionScreen({ onLogout }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <Ionicons name="settings" size={48} color={COLORES.agua} />
-          <Text style={styles.title}>Configuración</Text>
+          <View style={styles.headerLeft}>
+            <Ionicons name="settings" size={48} color={COLORES.agua} />
+            <Text style={styles.title}>Configuración</Text>
+          </View>
+          <NotificationBell />
         </View>
         
         {usuario && (
@@ -292,9 +296,19 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   header: {
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     marginTop: 8,
     marginBottom: 16,
+  },
+  headerLeft: {
+    alignItems: 'center',
+  },
+  headerRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
   },
   title: { 
     fontSize: 24, 

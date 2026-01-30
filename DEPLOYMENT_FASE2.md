@@ -53,14 +53,27 @@ Si pregunta si quieres crear `eas.json`, di **No** (ya existe). Si pregunta por 
 
 ## Paso 4: Generar un build de prueba (Android APK)
 
-**Tienes que ejecutar siempre desde la carpeta `mobile`** (EAS exige estar dentro del proyecto Expo).
+### Opción A: Script desde la raíz (recomendado si antes falló por backend/)
+
+Desde la **raíz del repo** (no desde `mobile`), ejecuta el script que empaqueta solo la app y lanza EAS:
+
+```powershell
+cd C:\DEV\ProyectoVinculo
+.\eas-build-solo-mobile.ps1
+```
+
+El script copia solo la carpeta `mobile` a una carpeta temporal y ejecuta `eas build` desde ahí. Así EAS no incluye `backend/` y evita errores de "Permission denied" o tar. Ver **EAS_BUILD_MONOREPO_FIX.md** si necesitas más detalle.
+
+### Opción B: Desde la carpeta mobile
+
+Si prefieres lanzar EAS directamente, **entra solo en `mobile`** (el prompt debe terminar en `\mobile`):
 
 ```powershell
 cd C:\DEV\ProyectoVinculo\mobile
 eas build --platform android --profile preview --clear-cache
 ```
 
-Asegúrate de que el prompt muestre `...\mobile>` antes de ejecutar `eas build`. Así EAS empaqueta solo la carpeta `mobile` y no incluye `backend/`.
+No ejecutes `eas build` desde `C:\DEV\ProyectoVinculo` (raíz); EAS empaquetaría todo el repo.
 
 - **preview** → genera un **APK** (instalable directamente, sin Play Store).
 - Te preguntará si quieres subir una keystore o que EAS la gestione: elige **Let EAS handle it** (recomendado).

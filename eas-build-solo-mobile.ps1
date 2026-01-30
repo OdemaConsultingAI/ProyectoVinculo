@@ -29,6 +29,7 @@ Get-ChildItem -Path $mobileSrc -Force | Where-Object {
 }
 
 Write-Host "Entrando en carpeta temporal y ejecutando EAS build..." -ForegroundColor Cyan
+$exitCode = 0
 Push-Location $tempBuild
 try {
     & eas build --platform android --profile preview --clear-cache
