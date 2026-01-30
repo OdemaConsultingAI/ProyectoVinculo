@@ -25,7 +25,7 @@ const {
   apiLimiter
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
-const { voiceToTaskStructured, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { voiceToTaskStructured, transcribe, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
 
@@ -599,12 +599,64 @@ app.get('/api/voice/temp', authenticateToken, (req, res) => {
 app.post('/api/voice/temp', authenticateToken, postVoiceTemp);
 app.delete('/api/voice/temp/:id', authenticateToken, deleteVoiceTempById);
 
+// GET - Transcribir nota temporal con Whisper (OpenAI). Devuelve { texto }. No borra la nota.
+app.get('/api/ai/voice-temp/:id/transcribe', authenticateToken, async (req, res, next) => {
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+    return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
+  }
+  const id = req.params.id;
+  if (!id) {
+    return next(createError('Falta id de nota temporal.', ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+  try {
+    const doc = await VoiceNoteTemp.findOne({ _id: id, usuarioId: req.user.id });
+    if (!doc) {
+      return res.status(404).json({ message: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    const buffer = Buffer.from(doc.audioBase64, 'base64');
+    if (buffer.length === 0) {
+      return next(createError('El audio está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const texto = await transcribe(buffer, 'audio/mp4');
+    res.json({ texto: texto || '' });
+  } catch (error) {
+    console.error('Error en GET voice-temp/transcribe:', error);
+    next(error);
+  }
+});
+
 // Rutas alias bajo /api/ai/ (por si el deploy en Render solo expone /api/ai/*)
 app.get('/api/ai/voice-temp', authenticateToken, (req, res) => {
   res.json({ voiceTemp: true, message: 'Usa POST para subir audio en base64.' });
 });
 app.post('/api/ai/voice-temp', authenticateToken, postVoiceTemp);
 app.delete('/api/ai/voice-temp/:id', authenticateToken, deleteVoiceTempById);
+
+// POST transcribir (mismo prefijo que upload/delete; evita 404 con GET en algunos proxies)
+app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, next) => {
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+    return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
+  }
+  const id = req.body && req.body.tempId;
+  if (!id || typeof id !== 'string') {
+    return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+  try {
+    const doc = await VoiceNoteTemp.findOne({ _id: id.trim(), usuarioId: req.user.id });
+    if (!doc) {
+      return res.status(404).json({ message: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    const buffer = Buffer.from(doc.audioBase64, 'base64');
+    if (buffer.length === 0) {
+      return next(createError('El audio está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const texto = await transcribe(buffer, 'audio/mp4');
+    res.json({ texto: texto || '' });
+  } catch (error) {
+    console.error('Error en POST voice-temp/transcribe:', error);
+    next(error);
+  }
+});
 
 // ============================================
 // RUTAS DE CONTACTOS (requieren autenticación)

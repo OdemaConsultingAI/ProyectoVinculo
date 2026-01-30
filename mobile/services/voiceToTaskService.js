@@ -363,6 +363,60 @@ export async function uploadVoiceTemp(fileUri) {
 }
 
 /**
+ * Transcribe la nota temporal con OpenAI Whisper. No borra la nota.
+ * Usa POST /api/ai/voice-temp/transcribe (mismo prefijo que upload; evita 404 con GET en Render).
+ * @param {string} tempId - ID devuelto por uploadVoiceTemp
+ * @returns {Promise<{ success: true, texto: string } | { success: false, error: string }>}
+ */
+export async function transcribeVoiceTemp(tempId) {
+  const url = `${VOICE_TEMP_URL}/transcribe`;
+  log('1/4 transcribeVoiceTemp iniciado | tempId:', tempId, '| POST a:', url);
+  if (!tempId || typeof tempId !== 'string') {
+    log('2/4 ERROR: tempId vacío o inválido');
+    return { success: false, error: 'Falta id de nota temporal.' };
+  }
+  const token = await getToken();
+  if (!token) {
+    log('2/4 ERROR: sin token');
+    return { success: false, error: 'Debes iniciar sesión.' };
+  }
+  log('2/4 Token OK');
+  try {
+    log('3/4 POST request a:', url, 'body: { tempId }');
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ tempId: tempId.trim() }),
+    });
+    const data = await response.json().catch(() => ({}));
+    log('4/4 Respuesta POST transcribe status:', response.status, 'body keys:', Object.keys(data));
+    if (response.status === 404) {
+      log('4/4 *** 404 en POST /api/ai/voice-temp/transcribe *** Redeploy backend en Render.');
+    }
+    if (!response.ok) {
+      log('4/4 ERROR:', response.status, data.error || data.message || data);
+      return {
+        success: false,
+        error: data.error || data.message || `Error ${response.status}`,
+      };
+    }
+    const texto = typeof data.texto === 'string' ? data.texto : '';
+    log('4/4 OK transcripción longitud:', texto.length);
+    return { success: true, texto };
+  } catch (e) {
+    log('4/4 EXCEPCIÓN:', e.message);
+    return {
+      success: false,
+      error: e.message && e.message.includes('Network') ? 'Sin conexión.' : (e.message || 'Error al transcribir.'),
+    };
+  }
+}
+
+/**
  * Borra la nota temporal del backend (al cerrar modal o tras guardar como tarea/interacción).
  * @param {string} tempId - ID devuelto por uploadVoiceTemp
  * @returns {Promise<{ success: boolean, error?: string }>}

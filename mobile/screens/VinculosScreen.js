@@ -43,7 +43,7 @@ import {
 } from '../services/syncService';
 import NetInfo from '@react-native-community/netinfo';
 import { validatePhone, validateBirthday, validateName, sanitizeText } from '../utils/validations';
-import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp } from '../services/voiceToTaskService';
+import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -121,7 +121,27 @@ export default function VinculosScreen() {
   const [voicePreviewAudioUri, setVoicePreviewAudioUri] = useState(null);
   const [voicePreviewTempId, setVoicePreviewTempId] = useState(null);
   const [modalVoicePreviewVisible, setModalVoicePreviewVisible] = useState(false);
+  const [voicePreviewTranscription, setVoicePreviewTranscription] = useState(null);
+  const [voiceTranscribing, setVoiceTranscribing] = useState(false);
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Transcribir nota temporal con Whisper cuando se abre el modal con tempId
+  useEffect(() => {
+    if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
+    console.log('[VinculosScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
+    setVoiceTranscribing(true);
+    setVoicePreviewTranscription(null);
+    transcribeVoiceTemp(voicePreviewTempId).then((result) => {
+      setVoiceTranscribing(false);
+      console.log('[VinculosScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length } : { error: result.error });
+      if (result.success) setVoicePreviewTranscription(result.texto || '');
+      else setVoicePreviewTranscription(result.error || 'Error al transcribir');
+    }).catch((err) => {
+      console.log('[VinculosScreen] transcribeVoiceTemp excepción:', err?.message);
+      setVoiceTranscribing(false);
+      setVoicePreviewTranscription('Error al transcribir');
+    });
+  }, [modalVoicePreviewVisible, voicePreviewTempId]);
 
   // Timer de grabación (actualizar cada segundo)
   useEffect(() => {
@@ -3353,6 +3373,8 @@ export default function VinculosScreen() {
                   setVoicePreviewData(null);
                   setVoicePreviewAudioUri(null);
                   setVoicePreviewTempId(null);
+                  setVoicePreviewTranscription(null);
+                  setVoiceTranscribing(false);
                 }}>
                   <Ionicons name="close" size={24} color={COLORES.texto} />
                 </TouchableOpacity>
@@ -3371,6 +3393,15 @@ export default function VinculosScreen() {
                       <Ionicons name="play" size={24} color="white" />
                       <Text style={styles.modalVoicePreviewPlayButtonText}>Reproducir nota</Text>
                     </TouchableOpacity>
+                    {voiceTranscribing && (
+                      <Text style={[styles.modalVoicePreviewText, { marginTop: 12, fontStyle: 'italic' }]}>Transcribiendo...</Text>
+                    )}
+                    {!voiceTranscribing && voicePreviewTranscription !== null && (
+                      <>
+                        <Text style={styles.modalVoicePreviewLabel}>Transcripción:</Text>
+                        <Text style={styles.modalVoicePreviewText}>{voicePreviewTranscription || '—'}</Text>
+                      </>
+                    )}
                   </>
                 )}
                 {voicePreviewData && (
@@ -3418,6 +3449,8 @@ export default function VinculosScreen() {
                     setVoicePreviewData(null);
                     setVoicePreviewAudioUri(null);
                     setVoicePreviewTempId(null);
+                    setVoicePreviewTranscription(null);
+                    setVoiceTranscribing(false);
                     Alert.alert('Listo', 'Tarea guardada.');
                   }}
                 >
@@ -3448,6 +3481,8 @@ export default function VinculosScreen() {
                     setVoicePreviewData(null);
                     setVoicePreviewAudioUri(null);
                     setVoicePreviewTempId(null);
+                    setVoicePreviewTranscription(null);
+                    setVoiceTranscribing(false);
                     Alert.alert('Listo', 'Interacción guardada.');
                   }}
                 >
@@ -3462,6 +3497,8 @@ export default function VinculosScreen() {
                     setVoicePreviewData(null);
                     setVoicePreviewAudioUri(null);
                     setVoicePreviewTempId(null);
+                    setVoicePreviewTranscription(null);
+                    setVoiceTranscribing(false);
                   }}
                 >
                   <Text style={styles.modalVoicePreviewCancelText}>Cancelar</Text>
@@ -3477,6 +3514,8 @@ export default function VinculosScreen() {
                     setVoicePreviewData(null);
                     setVoicePreviewAudioUri(null);
                     setVoicePreviewTempId(null);
+                    setVoicePreviewTranscription(null);
+                    setVoiceTranscribing(false);
                   }}
                 >
                   <Text style={styles.modalVoicePreviewCancelText}>Cerrar</Text>

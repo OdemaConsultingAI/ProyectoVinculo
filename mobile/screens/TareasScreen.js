@@ -24,7 +24,7 @@ import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones } from '../services/syncService';
-import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp } from '../services/voiceToTaskService';
+import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
@@ -71,7 +71,27 @@ export default function TareasScreen() {
   const [voicePreviewAudioUri, setVoicePreviewAudioUri] = useState(null);
   const [voicePreviewTempId, setVoicePreviewTempId] = useState(null);
   const [modalVoicePreviewVisible, setModalVoicePreviewVisible] = useState(false);
+  const [voicePreviewTranscription, setVoicePreviewTranscription] = useState(null);
+  const [voiceTranscribing, setVoiceTranscribing] = useState(false);
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
+
+  // Transcribir nota temporal con Whisper cuando se abre el modal con tempId
+  useEffect(() => {
+    if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
+    console.log('[TareasScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
+    setVoiceTranscribing(true);
+    setVoicePreviewTranscription(null);
+    transcribeVoiceTemp(voicePreviewTempId).then((result) => {
+      setVoiceTranscribing(false);
+      console.log('[TareasScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length } : { error: result.error });
+      if (result.success) setVoicePreviewTranscription(result.texto || '');
+      else setVoicePreviewTranscription(result.error || 'Error al transcribir');
+    }).catch((err) => {
+      console.log('[TareasScreen] transcribeVoiceTemp excepción:', err?.message);
+      setVoiceTranscribing(false);
+      setVoicePreviewTranscription('Error al transcribir');
+    });
+  }, [modalVoicePreviewVisible, voicePreviewTempId]);
 
   // Timer de grabación (actualizar cada segundo)
   useEffect(() => {
@@ -773,6 +793,8 @@ export default function TareasScreen() {
                 setVoicePreviewData(null);
                 setVoicePreviewAudioUri(null);
                 setVoicePreviewTempId(null);
+                setVoicePreviewTranscription(null);
+                setVoiceTranscribing(false);
               }}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
               </TouchableOpacity>
@@ -791,6 +813,15 @@ export default function TareasScreen() {
                     <Ionicons name="play" size={24} color="white" />
                     <Text style={styles.modalVoicePreviewPlayButtonText}>Reproducir nota</Text>
                   </TouchableOpacity>
+                  {voiceTranscribing && (
+                    <Text style={[styles.modalVoicePreviewText, { marginTop: 12, fontStyle: 'italic' }]}>Transcribiendo...</Text>
+                  )}
+                  {!voiceTranscribing && voicePreviewTranscription !== null && (
+                    <>
+                      <Text style={styles.modalVoicePreviewLabel}>Transcripción:</Text>
+                      <Text style={styles.modalVoicePreviewText}>{voicePreviewTranscription || '—'}</Text>
+                    </>
+                  )}
                 </>
               )}
               {voicePreviewData && (
@@ -838,6 +869,8 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                   setVoicePreviewData(null);
                   setVoicePreviewAudioUri(null);
                   setVoicePreviewTempId(null);
+                  setVoicePreviewTranscription(null);
+                  setVoiceTranscribing(false);
                   Alert.alert('Listo', 'Tarea guardada.');
                 }}
               >
@@ -862,10 +895,14 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                     };
                     const updatedInteracciones = [...(contact.interacciones || []), newInteraction];
                     await updateContactInteracciones(voicePreviewData.contactoId, updatedInteracciones);
+                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                     cargarTareas();
                     setModalVoicePreviewVisible(false);
                     setVoicePreviewData(null);
                     setVoicePreviewAudioUri(null);
+                    setVoicePreviewTempId(null);
+                    setVoicePreviewTranscription(null);
+                    setVoiceTranscribing(false);
                     Alert.alert('Listo', 'Interacción guardada.');
                   }}
                 >
@@ -882,6 +919,8 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                 setVoicePreviewData(null);
                 setVoicePreviewAudioUri(null);
                 setVoicePreviewTempId(null);
+                setVoicePreviewTranscription(null);
+                setVoiceTranscribing(false);
               }}
               >
                 <Text style={styles.modalVoicePreviewCancelText}>{voicePreviewData ? 'Cancelar' : 'Cerrar'}</Text>
