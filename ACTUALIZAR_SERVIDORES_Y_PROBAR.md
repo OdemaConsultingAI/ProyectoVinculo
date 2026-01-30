@@ -1,6 +1,10 @@
 # Paso a paso: actualizar servidores y probar últimas funciones
 
-Funciones recientes: **notas de voz** (grabar → subir base64 temporal → transcribir con Whisper → mostrar transcripción → borrar temp al cerrar/guardar).
+**Recordatorio para el asistente (IA):** Siempre que se hagan cambios en el backend (nuevas rutas API, variables de entorno, modelos, etc.) que afecten al servidor desplegado (p. ej. Render), **indicar al usuario que debe actualizar el servidor** y resumir o enlazar los pasos de este documento (git push → deploy en Render → comprobar health).
+
+---
+
+Funciones recientes: **notas de voz** (grabar → subir base64 temporal → transcribir con Whisper → guardar como audio en interacción/tarea con endpoints from-voice).
 
 ---
 

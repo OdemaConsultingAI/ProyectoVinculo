@@ -497,3 +497,58 @@ export const updateContactTareas = async (contactoId, tareas) => {
     return { success: true, contacto: updatedContacts.find(c => c._id === contactoId), offline: true };
   }
 };
+
+/** Guardar interacción desde nota de voz: guarda la transcripción íntegra (sin audio). Requiere conexión. */
+export const saveInteractionFromVoice = async (contactoId, tempId, texto = '') => {
+  if (!isOnline) {
+    throw new Error('Necesitas conexión para guardar la nota de voz.');
+  }
+  const response = await fetchWithAuth(`${API_URL}/${contactoId}/interacciones/from-voice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tempId, texto: typeof texto === 'string' ? texto : '' }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 404) {
+      throw new Error('El servidor no tiene la función de guardar nota de voz. Haz un despliegue del backend en Render con los últimos cambios.');
+    }
+    throw new Error(data.error || data.message || 'Error al guardar la interacción.');
+  }
+  const savedContact = await response.json();
+  const cachedContacts = await loadContactsFromCache();
+  const finalContacts = cachedContacts.map(c =>
+    c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+  );
+  await saveContactsToCache(finalContacts);
+  return { success: true, contacto: savedContact };
+};
+
+/** Guardar tarea desde nota de voz: guarda la transcripción íntegra (sin audio). Requiere conexión. */
+export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, clasificacion = 'Otro', texto = '') => {
+  if (!isOnline) {
+    throw new Error('Necesitas conexión para guardar la nota de voz.');
+  }
+  const body = { tempId, texto: typeof texto === 'string' ? texto : '' };
+  if (fechaHoraEjecucion) body.fechaHoraEjecucion = typeof fechaHoraEjecucion === 'string' ? fechaHoraEjecucion : fechaHoraEjecucion.toISOString?.() || new Date(fechaHoraEjecucion).toISOString();
+  if (clasificacion) body.clasificacion = clasificacion;
+  const response = await fetchWithAuth(`${API_URL}/${contactoId}/tareas/from-voice`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    if (response.status === 404) {
+      throw new Error('El servidor no tiene la función de guardar nota de voz. Haz un despliegue del backend en Render con los últimos cambios.');
+    }
+    throw new Error(data.error || data.message || 'Error al guardar la tarea.');
+  }
+  const savedContact = await response.json();
+  const cachedContacts = await loadContactsFromCache();
+  const finalContacts = cachedContacts.map(c =>
+    c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+  );
+  await saveContactsToCache(finalContacts);
+  return { success: true, contacto: savedContact };
+};

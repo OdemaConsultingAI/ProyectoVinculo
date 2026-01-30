@@ -15,7 +15,7 @@ import {
   ScrollView,
   Animated
 } from 'react-native';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,8 +23,8 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
-import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones } from '../services/syncService';
-import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
+import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
+import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
@@ -93,6 +93,7 @@ export default function TareasScreen() {
           tarea: result.tarea || '',
           descripcion: result.descripcion || result.tarea || '',
           fecha: result.fecha || new Date().toISOString().slice(0, 10),
+          clasificacion: CLASIFICACIONES.includes(result.clasificacion) ? result.clasificacion : 'Otro',
           contactoId: result.contactoId || null,
           contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
         });
@@ -860,8 +861,8 @@ export default function TareasScreen() {
                     (voicePreviewData.tipo === 'tarea') && styles.modalVoicePreviewButtonSuggested,
                   ]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado. Añade contactos para guardar como tarea.');
+                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
+                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
                       return;
                     }
                     const contact = contactos.find(c => c._id === voicePreviewData.contactoId);
@@ -869,27 +870,28 @@ export default function TareasScreen() {
                       Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
                       return;
                     }
-                    const fechaEjecucion = new Date(voicePreviewData.fecha);
-                    if (isNaN(fechaEjecucion.getTime())) fechaEjecucion.setTime(Date.now());
-                    const newTask = {
-                      fechaHoraCreacion: new Date(),
-                      descripcion: voicePreviewData.tarea,
-                      fechaHoraEjecucion: fechaEjecucion,
-                      clasificacion: 'Otro',
-                      completada: false
-                    };
-                    const updatedTareas = [...(contact.tareas || []), newTask];
-await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
-                  if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                  cargarTareas();
-                  setModalVoicePreviewVisible(false);
-                  setVoicePreviewData(null);
-                  setVoicePreviewAudioUri(null);
-                  setVoicePreviewTempId(null);
-                  setVoicePreviewTranscription(null);
-                  setVoiceTranscribing(false);
-                  Alert.alert('Listo', 'Tarea guardada.');
-                }}
+                    try {
+                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
+                      if (!textoTranscripcion) {
+                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
+                        return;
+                      }
+                      const fechaEjecucion = new Date(voicePreviewData.fecha);
+                      const clasificacion = CLASIFICACIONES.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
+                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      cargarTareas();
+                      setModalVoicePreviewVisible(false);
+                      setVoicePreviewData(null);
+                      setVoicePreviewAudioUri(null);
+                      setVoicePreviewTempId(null);
+                      setVoicePreviewTranscription(null);
+                      setVoiceTranscribing(false);
+                      Alert.alert('Listo', 'Tarea guardada (nota de voz).');
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                    }
+                  }}
               >
                 <Ionicons name="checkmark-done-outline" size={22} color="white" />
                 <Text style={styles.modalVoicePreviewButtonText}>Guardar como tarea</Text>
@@ -897,8 +899,8 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                 <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado. Añade contactos para guardar como interacción.');
+                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
+                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
                       return;
                     }
                     const contact = contactos.find(c => c._id === voicePreviewData.contactoId);
@@ -906,21 +908,32 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                       Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
                       return;
                     }
-                    const newInteraction = {
-                      fechaHora: new Date(),
-                      descripcion: voicePreviewData.descripcion || voicePreviewData.tarea
-                    };
-                    const updatedInteracciones = [...(contact.interacciones || []), newInteraction];
-                    await updateContactInteracciones(voicePreviewData.contactoId, updatedInteracciones);
-                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                    cargarTareas();
-                    setModalVoicePreviewVisible(false);
-                    setVoicePreviewData(null);
-                    setVoicePreviewAudioUri(null);
-                    setVoicePreviewTempId(null);
-                    setVoicePreviewTranscription(null);
-                    setVoiceTranscribing(false);
-                    Alert.alert('Listo', 'Interacción guardada.');
+                    try {
+                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
+                      if (!textoTranscripcion) {
+                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
+                        return;
+                      }
+                      const { contacto } = await saveInteractionFromVoice(voicePreviewData.contactoId, voicePreviewTempId, textoTranscripcion);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      cargarTareas();
+                      setModalVoicePreviewVisible(false);
+                      setVoicePreviewData(null);
+                      setVoicePreviewAudioUri(null);
+                      setVoicePreviewTempId(null);
+                      setVoicePreviewTranscription(null);
+                      setVoiceTranscribing(false);
+                      Alert.alert(
+                        'Interacción guardada',
+                        'Se guardó como texto. Toca "Ver interacciones" para ir directo a verla.',
+                        [
+                          { text: 'Ver interacciones', onPress: () => navigation.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
+                          { text: 'Cerrar', style: 'cancel' }
+                        ]
+                      );
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                    }
                   }}
                 >
                   <Ionicons name="chatbubble-outline" size={22} color="white" />
@@ -993,7 +1006,7 @@ await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
                 <View style={styles.historialItem}>
                   <View style={styles.historialItemContent}>
                     <Text style={styles.historialItemTitulo}>{item.clasificacion || 'Tarea'}</Text>
-                    <Text style={styles.historialItemDesc} numberOfLines={1}>{item.descripcion}</Text>
+                    <Text style={styles.historialItemDesc} numberOfLines={1}>{item.audioBase64 ? '[Nota de voz]' : item.descripcion}</Text>
                     <Text style={styles.historialItemMeta}>
                       {item.contactoNombre} · {item.fechaCompletado.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
                     </Text>

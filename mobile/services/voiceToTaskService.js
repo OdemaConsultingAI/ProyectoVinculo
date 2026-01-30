@@ -129,6 +129,37 @@ export async function playPreviewUri(fileUri) {
 }
 
 /**
+ * Reproduce una nota de voz guardada desde base64 (interacción/tarea con audio).
+ * @param {string} audioBase64 - Audio en base64 (m4a/mp4)
+ * @returns {Promise<{ error?: string }>}
+ */
+export async function playFromBase64(audioBase64) {
+  const Audio = getExpoAv();
+  if (!Audio) {
+    return { error: 'expo-av no está instalado.' };
+  }
+  if (!audioBase64 || typeof audioBase64 !== 'string') {
+    return { error: 'No hay audio para reproducir.' };
+  }
+  try {
+    const dataUri = `data:audio/mp4;base64,${audioBase64}`;
+    await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+    const { sound } = await Audio.Sound.createAsync(
+      { uri: dataUri },
+      { shouldPlay: true }
+    );
+    sound.setOnPlaybackStatusUpdate((status) => {
+      if (status.didJustFinish && !status.isLooping) {
+        sound.unloadAsync().catch(() => {});
+      }
+    });
+    return {};
+  } catch (e) {
+    return { error: e.message || 'No se pudo reproducir.' };
+  }
+}
+
+/**
  * Envía el archivo de audio al backend (POST multipart) y devuelve la respuesta.
  * @param {string} fileUri - URI local del archivo (file://...)
  * @returns {Promise<{ success: true, data: object } | { success: false, error: string, status?: number }>}
@@ -399,10 +430,10 @@ export async function transcribeVoiceTemp(tempId) {
     }
     if (!response.ok) {
       log('4/4 ERROR:', response.status, data.error || data.message || data);
-      return {
-        success: false,
-        error: data.error || data.message || `Error ${response.status}`,
-      };
+      const errorMsg = response.status === 429
+        ? (data.error || data.message || 'Has agotado tus consultas de IA por hoy. Pásate a Premium para más.')
+        : (data.error || data.message || `Error ${response.status}`);
+      return { success: false, error: errorMsg };
     }
     const texto = typeof data.texto === 'string' ? data.texto : '';
     log('4/4 OK transcripción longitud:', texto.length, 'tipo:', data.tipo);
@@ -414,6 +445,7 @@ export async function transcribeVoiceTemp(tempId) {
       tarea: data.tarea || '',
       descripcion: data.descripcion || data.tarea || '',
       fecha: data.fecha || new Date().toISOString().slice(0, 10),
+      clasificacion: data.clasificacion || 'Otro',
       contactoId: data.contactoId || null,
       contactoNombre: data.contactoNombre || data.vinculo || 'Sin asignar',
       model: data.model,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -39,11 +39,13 @@ import {
   syncPendingChanges,
   saveContactsToCache,
   updateContactInteracciones,
-  updateContactTareas
+  updateContactTareas,
+  saveInteractionFromVoice,
+  saveTaskFromVoice
 } from '../services/syncService';
 import NetInfo from '@react-native-community/netinfo';
 import { validatePhone, validateBirthday, validateName, sanitizeText } from '../utils/validations';
-import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
+import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
@@ -76,6 +78,8 @@ const CLASIFICACIONES = ['Familia', 'Mejor Amigo', 'Amigo', 'Trabajo', 'Conocido
 const CLASIFICACIONES_TAREAS = ['Llamar', 'Visitar', 'Enviar mensaje', 'Regalo', 'Evento', 'Otro'];
 
 export default function VinculosScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
   // Estados principales
   const [vinculos, setVinculos] = useState([]);
   const [cargando, setCargando] = useState(true);
@@ -143,6 +147,7 @@ export default function VinculosScreen() {
           tarea: result.tarea || '',
           descripcion: result.descripcion || result.tarea || '',
           fecha: result.fecha || new Date().toISOString().slice(0, 10),
+          clasificacion: CLASIFICACIONES_TAREAS.includes(result.clasificacion) ? result.clasificacion : 'Otro',
           contactoId: result.contactoId || null,
           contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
         });
@@ -296,6 +301,27 @@ export default function VinculosScreen() {
       clearInterval(connectionInterval);
     };
   }, []);
+
+  // Abrir modal de interacciones cuando se navega desde Tareas con openContactId / openContact
+  useFocusEffect(
+    useCallback(() => {
+      const contact = route.params?.openContact;
+      const id = route.params?.openContactId;
+      if (contact) {
+        setDatosEditados(contact);
+        setModalInteraccionesVisible(true);
+        navigation.setParams({ openContactId: undefined, openContact: undefined });
+        return;
+      }
+      if (!id || !vinculos.length) return;
+      const found = vinculos.find(c => c._id === id);
+      if (found) {
+        setDatosEditados(found);
+        setModalInteraccionesVisible(true);
+        navigation.setParams({ openContactId: undefined });
+      }
+    }, [route.params?.openContactId, route.params?.openContact, vinculos, navigation])
+  );
 
   // Animación de pulso para el botón flotante de swipe
   useEffect(() => {
@@ -2570,9 +2596,23 @@ export default function VinculosScreen() {
               renderItem={({item, index}) => (
                 <View style={styles.interaccionItem}>
                   <View style={styles.interaccionContent}>
-                    <Text style={styles.interaccionTexto}>
-                      {item.descripcion}
-                    </Text>
+                    {item.audioBase64 ? (
+                      <>
+                        <Text style={styles.interaccionTexto}>[Nota de voz]</Text>
+                        <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}
+                          onPress={async () => {
+                            const r = await playFromBase64(item.audioBase64);
+                            if (r.error) Alert.alert('Audio', r.error);
+                          }}
+                        >
+                          <Ionicons name="play-circle" size={28} color={COLORES.agua} />
+                          <Text style={[styles.interaccionFecha, { color: COLORES.agua }]}>Reproducir</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <Text style={styles.interaccionTexto}>{item.descripcion}</Text>
+                    )}
                     <View style={styles.interaccionMeta}>
                       {item.fechaHora && (
                         <Text style={styles.interaccionFecha}>
@@ -2581,12 +2621,14 @@ export default function VinculosScreen() {
                       )}
                     </View>
                   </View>
-                  <TouchableOpacity
-                    style={styles.interaccionEditButton}
-                    onPress={() => abrirEditarInteraccion(item)}
-                  >
-                    <Ionicons name="pencil-outline" size={22} color={COLORES.agua} />
-                  </TouchableOpacity>
+                  {!item.audioBase64 && (
+                    <TouchableOpacity
+                      style={styles.interaccionEditButton}
+                      onPress={() => abrirEditarInteraccion(item)}
+                    >
+                      <Ionicons name="pencil-outline" size={22} color={COLORES.agua} />
+                    </TouchableOpacity>
+                  )}
                 </View>
               )}
               contentContainerStyle={styles.interaccionesListContent}
@@ -2825,9 +2867,25 @@ export default function VinculosScreen() {
                     />
                   </TouchableOpacity>
                   <View style={styles.interaccionContent}>
-                    <Text style={[styles.interaccionTexto, item.completada && styles.interaccionTextoCompletada]}>
-                      {item.descripcion}
-                    </Text>
+                    {item.audioBase64 ? (
+                      <>
+                        <Text style={[styles.interaccionTexto, item.completada && styles.interaccionTextoCompletada]}>[Nota de voz]</Text>
+                        <TouchableOpacity
+                          style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 6 }}
+                          onPress={async () => {
+                            const r = await playFromBase64(item.audioBase64);
+                            if (r.error) Alert.alert('Audio', r.error);
+                          }}
+                        >
+                          <Ionicons name="play-circle" size={28} color={COLORES.agua} />
+                          <Text style={[styles.interaccionEjecucion, { color: COLORES.agua }]}>Reproducir</Text>
+                        </TouchableOpacity>
+                      </>
+                    ) : (
+                      <Text style={[styles.interaccionTexto, item.completada && styles.interaccionTextoCompletada]}>
+                        {item.descripcion}
+                      </Text>
+                    )}
                     <View style={styles.interaccionMeta}>
                       {item.clasificacion && (
                         <View style={styles.interaccionClasificacionBadge}>
@@ -3423,6 +3481,8 @@ export default function VinculosScreen() {
                     <Text style={styles.modalVoicePreviewText}>{voicePreviewData.texto || '—'}</Text>
                     <Text style={styles.modalVoicePreviewLabel}>Contacto:</Text>
                     <Text style={styles.modalVoicePreviewText}>{voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}</Text>
+                    <Text style={styles.modalVoicePreviewLabel}>Clasificación:</Text>
+                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.clasificacion || 'Otro'}</Text>
                     <Text style={styles.modalVoicePreviewLabel}>Tarea extraída:</Text>
                     <Text style={styles.modalVoicePreviewText}>{voicePreviewData.tarea || '—'}</Text>
                     <Text style={styles.modalVoicePreviewLabel}>Fecha:</Text>
@@ -3440,8 +3500,8 @@ export default function VinculosScreen() {
                     (voicePreviewData.tipo === 'tarea') && styles.modalVoicePreviewButtonSuggested,
                   ]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado. Añade contactos para guardar como tarea.');
+                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
+                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
                       return;
                     }
                     const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
@@ -3449,26 +3509,27 @@ export default function VinculosScreen() {
                       Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
                       return;
                     }
-                    const fechaEjecucion = new Date(voicePreviewData.fecha);
-                    if (isNaN(fechaEjecucion.getTime())) fechaEjecucion.setTime(Date.now());
-                    const newTask = {
-                      fechaHoraCreacion: new Date(),
-                      descripcion: voicePreviewData.tarea,
-                      fechaHoraEjecucion: fechaEjecucion,
-                      clasificacion: 'Otro',
-                      completada: false
-                    };
-                    const updatedTareas = [...(contact.tareas || []), newTask];
-                    await updateContactTareas(voicePreviewData.contactoId, updatedTareas);
-                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                    cargarVinculos();
-                    setModalVoicePreviewVisible(false);
-                    setVoicePreviewData(null);
-                    setVoicePreviewAudioUri(null);
-                    setVoicePreviewTempId(null);
-                    setVoicePreviewTranscription(null);
-                    setVoiceTranscribing(false);
-                    Alert.alert('Listo', 'Tarea guardada.');
+                    try {
+                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
+                      if (!textoTranscripcion) {
+                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
+                        return;
+                      }
+                      const fechaEjecucion = new Date(voicePreviewData.fecha);
+                      const clasificacion = CLASIFICACIONES_TAREAS.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
+                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      cargarVinculos();
+                      setModalVoicePreviewVisible(false);
+                      setVoicePreviewData(null);
+                      setVoicePreviewAudioUri(null);
+                      setVoicePreviewTempId(null);
+                      setVoicePreviewTranscription(null);
+                      setVoiceTranscribing(false);
+                      Alert.alert('Listo', 'Tarea guardada (nota de voz).');
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                    }
                   }}
                 >
                   <Ionicons name="checkmark-done-outline" size={22} color="white" />
@@ -3477,8 +3538,8 @@ export default function VinculosScreen() {
                 <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado. Añade contactos para guardar como interacción.');
+                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
+                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
                       return;
                     }
                     const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
@@ -3486,21 +3547,32 @@ export default function VinculosScreen() {
                       Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
                       return;
                     }
-                    const newInteraction = {
-                      fechaHora: new Date(),
-                      descripcion: voicePreviewData.descripcion || voicePreviewData.tarea
-                    };
-                    const updatedInteracciones = [...(contact.interacciones || []), newInteraction];
-                    await updateContactInteracciones(voicePreviewData.contactoId, updatedInteracciones);
-                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                    cargarVinculos();
-                    setModalVoicePreviewVisible(false);
-                    setVoicePreviewData(null);
-                    setVoicePreviewAudioUri(null);
-                    setVoicePreviewTempId(null);
-                    setVoicePreviewTranscription(null);
-                    setVoiceTranscribing(false);
-                    Alert.alert('Listo', 'Interacción guardada.');
+                    try {
+                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
+                      if (!textoTranscripcion) {
+                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
+                        return;
+                      }
+                      const { contacto } = await saveInteractionFromVoice(voicePreviewData.contactoId, voicePreviewTempId, textoTranscripcion);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      cargarVinculos();
+                      setModalVoicePreviewVisible(false);
+                      setVoicePreviewData(null);
+                      setVoicePreviewAudioUri(null);
+                      setVoicePreviewTempId(null);
+                      setVoicePreviewTranscription(null);
+                      setVoiceTranscribing(false);
+                      Alert.alert(
+                        'Interacción guardada',
+                        'Se guardó como texto. Toca "Ver interacciones" para verla.',
+                        [
+                          { text: 'Ver interacciones', onPress: () => { setDatosEditados(contacto || {}); setModalInteraccionesVisible(true); } },
+                          { text: 'Cerrar', style: 'cancel' }
+                        ]
+                      );
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                    }
                   }}
                 >
                   <Ionicons name="chatbubble-outline" size={22} color="white" />

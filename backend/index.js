@@ -768,13 +768,17 @@ app.post('/api/contacto', authenticateToken, validateContact, async (req, res, n
   }
 });
 
-// POST - Añadir interacción desde nota de voz (guarda el audio base64, IA solo extrae contacto)
+// POST - Añadir interacción desde nota de voz (solo transcripción en texto; NUNCA guardar audio)
 app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async (req, res, next) => {
   try {
     const contactoId = req.params.id;
     const tempId = req.body && req.body.tempId;
+    const texto = req.body && (typeof req.body.texto === 'string' ? req.body.texto.trim() : '');
     if (!tempId || typeof tempId !== 'string') {
       return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    if (!texto) {
+      return next(createError('Envía la transcripción (campo "texto") para guardar como texto. No se guarda audio.', ERROR_CODES.VALIDATION_ERROR, 400));
     }
     const doc = await VoiceNoteTemp.findOne({ _id: tempId.trim(), usuarioId: req.user.id });
     if (!doc) {
@@ -784,10 +788,10 @@ app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async 
     if (!contacto) {
       return res.status(404).json({ error: 'Contacto no encontrado.' });
     }
+    // Solo descripcion (transcripción en texto). NUNCA usar doc.audioBase64 ni guardar audio.
     const nuevaInteraccion = {
       fechaHora: new Date(),
-      descripcion: '[Nota de voz]',
-      audioBase64: doc.audioBase64
+      descripcion: texto
     };
     contacto.interacciones = contacto.interacciones || [];
     contacto.interacciones.push(nuevaInteraccion);
@@ -801,13 +805,17 @@ app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async 
   }
 });
 
-// POST - Añadir tarea desde nota de voz (guarda el audio base64)
+// POST - Añadir tarea desde nota de voz (solo transcripción en texto; NUNCA guardar audio)
 app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, res, next) => {
   try {
     const contactoId = req.params.id;
     const tempId = req.body && req.body.tempId;
+    const texto = req.body && (typeof req.body.texto === 'string' ? req.body.texto.trim() : '');
     if (!tempId || typeof tempId !== 'string') {
       return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    if (!texto) {
+      return next(createError('Envía la transcripción (campo "texto") para guardar como texto. No se guarda audio.', ERROR_CODES.VALIDATION_ERROR, 400));
     }
     const doc = await VoiceNoteTemp.findOne({ _id: tempId.trim(), usuarioId: req.user.id });
     if (!doc) {
@@ -819,10 +827,10 @@ app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, r
     }
     const fechaEjecucion = req.body.fechaHoraEjecucion ? new Date(req.body.fechaHoraEjecucion) : new Date();
     const clasificacion = req.body.clasificacion && ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'].includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
+    // Solo descripcion (transcripción en texto). NUNCA usar doc.audioBase64 ni guardar audio.
     const nuevaTarea = {
       fechaHoraCreacion: new Date(),
-      descripcion: '[Nota de voz]',
-      audioBase64: doc.audioBase64,
+      descripcion: texto,
       fechaHoraEjecucion: isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion,
       clasificacion,
       completada: false
