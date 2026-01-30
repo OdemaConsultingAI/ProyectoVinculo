@@ -26,8 +26,44 @@ const {
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
 const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const PALABRAS_PROHIBIDAS = require('./config/palabrasProhibidas');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
+
+/** Mínimo de caracteres en la transcripción para enviar a GPT (> 5): no gastar en "Ah", "Eh" o ruido. */
+const MIN_CARACTERES_PARA_GPT = 6;
+
+/**
+ * Resetea contador diario de IA si es nuevo día y comprueba límite solo para usuarios Free.
+ * Modifica usuario en memoria (reset); guardar después si se incrementa.
+ * @returns {Promise<Error|null>} Error para next() o null si puede continuar.
+ */
+async function checkAILimitFreeUser(usuario) {
+  const hoy = new Date();
+  hoy.setHours(0, 0, 0, 0);
+  const ultimoReset = usuario.aiUltimoResetFecha ? new Date(usuario.aiUltimoResetFecha) : null;
+  if (ultimoReset) {
+    ultimoReset.setHours(0, 0, 0, 0);
+    if (ultimoReset.getTime() < hoy.getTime()) {
+      usuario.aiPeticionesHoy = 0;
+      usuario.aiUltimoResetFecha = hoy;
+      await usuario.save();
+    }
+  } else {
+    usuario.aiUltimoResetFecha = hoy;
+    await usuario.save();
+  }
+  if (usuario.plan === 'Premium') return null;
+  const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
+  if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
+    return createError(
+      'Has agotado tus consultas de IA por hoy. Pásate a Premium para más.',
+      ERROR_CODES.VALIDATION_ERROR,
+      429
+    );
+  }
+  return null;
+}
 
 const app = express();
 
@@ -357,28 +393,8 @@ app.post('/api/ai/voice-to-task', authenticateToken, upload.single('audio'), asy
     if (!usuario) {
       return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
     }
-
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const ultimoReset = usuario.aiUltimoResetFecha ? new Date(usuario.aiUltimoResetFecha) : null;
-    if (ultimoReset) {
-      ultimoReset.setHours(0, 0, 0, 0);
-      if (ultimoReset.getTime() < hoy.getTime()) {
-        usuario.aiPeticionesHoy = 0;
-        usuario.aiUltimoResetFecha = hoy;
-      }
-    } else {
-      usuario.aiUltimoResetFecha = hoy;
-    }
-
-    const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
-    if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
-      return next(createError(
-        `Has alcanzado el límite de ${LIMITE_PETICIONES_GRATIS} peticiones de voz por día. Vuelve mañana o mejora tu plan.`,
-        ERROR_CODES.VALIDATION_ERROR,
-        429
-      ));
-    }
+    const limitError = await checkAILimitFreeUser(usuario);
+    if (limitError) return next(limitError);
 
     const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre').lean();
     const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
@@ -463,26 +479,8 @@ async function handleVoicePreview(req, res, next, audioBuffer, mimeType = 'audio
     if (!usuario) {
       return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
     }
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const ultimoReset = usuario.aiUltimoResetFecha ? new Date(usuario.aiUltimoResetFecha) : null;
-    if (ultimoReset) {
-      ultimoReset.setHours(0, 0, 0, 0);
-      if (ultimoReset.getTime() < hoy.getTime()) {
-        usuario.aiPeticionesHoy = 0;
-        usuario.aiUltimoResetFecha = hoy;
-      }
-    } else {
-      usuario.aiUltimoResetFecha = hoy;
-    }
-    const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
-    if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
-      return next(createError(
-        `Has alcanzado el límite de ${LIMITE_PETICIONES_GRATIS} peticiones de voz por día. Vuelve mañana.`,
-        ERROR_CODES.VALIDATION_ERROR,
-        429
-      ));
-    }
+    const limitError = await checkAILimitFreeUser(usuario);
+    if (limitError) return next(limitError);
     const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre').lean();
     const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
     const { texto, vinculo, tarea, fecha } = await voiceToTaskStructured(
@@ -652,6 +650,13 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
   }
   try {
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    const limitError = await checkAILimitFreeUser(usuario);
+    if (limitError) return next(limitError);
+
     const doc = await VoiceNoteTemp.findOne({ _id: id.trim(), usuarioId: req.user.id });
     if (!doc) {
       return res.status(404).json({ message: 'Nota temporal no encontrada o ya borrada.' });
@@ -663,8 +668,34 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     const texto = await transcribe(buffer, 'audio/mp4');
     const textoTrim = (texto || '').trim();
     if (!textoTrim) {
-      return res.json({ texto: '', tipo: 'tarea', vinculo: 'Sin asignar', tarea: '', descripcion: '', fecha: new Date().toISOString().slice(0, 10) });
+      return res.json({ texto: '', tipo: 'tarea', vinculo: 'Sin asignar', tarea: '', descripcion: '', fecha: new Date().toISOString().slice(0, 10), clasificacion: 'Otro' });
     }
+
+    // No gastar en GPT si la transcripción es muy corta (ruido, "Ah", "Eh")
+    if (textoTrim.length < MIN_CARACTERES_PARA_GPT) {
+      const hoy = new Date().toISOString().slice(0, 10);
+      return res.json({
+        texto: textoTrim,
+        tipo: 'tarea',
+        vinculo: 'Sin asignar',
+        tarea: textoTrim,
+        descripcion: textoTrim,
+        fecha: hoy,
+        clasificacion: 'Otro',
+        contactoId: null,
+        contactoNombre: 'Sin asignar',
+        model: null
+      });
+    }
+
+    // Filtro de palabras prohibidas: rechazar antes de enviar a OpenAI
+    const textoLower = textoTrim.toLowerCase();
+    const tieneProhibida = Array.isArray(PALABRAS_PROHIBIDAS) && PALABRAS_PROHIBIDAS.length > 0 &&
+      PALABRAS_PROHIBIDAS.some(p => typeof p === 'string' && p.trim() && textoLower.includes(p.trim().toLowerCase()));
+    if (tieneProhibida) {
+      return res.status(400).json({ error: 'Contenido no permitido para procesar.' });
+    }
+
     const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre _id').lean();
     const nombresContactos = contactos.map(c => (c.nombre || '').trim()).filter(Boolean);
     const extracted = await extractVoiceAction(textoTrim, nombresContactos);
@@ -672,13 +703,22 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     const contactoMatch = contactos.find(c => (c.nombre || '').toLowerCase().trim() === vinculoNorm);
     const contactoId = contactoMatch ? contactoMatch._id.toString() : null;
     const contactoNombre = contactoMatch ? (contactoMatch.nombre || extracted.vinculo) : (extracted.vinculo || 'Sin asignar');
+
+    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
+    await usuario.save();
+
+    // Voicenote sin cambios: descripción y tarea = transcripción de Whisper tal cual
+    const descripcionFinal = textoTrim;
+    const tareaFinal = extracted.tipo === 'tarea' ? textoTrim : '';
+
     res.json({
       texto: textoTrim,
       tipo: extracted.tipo,
       vinculo: extracted.vinculo,
-      tarea: extracted.tarea,
-      descripcion: extracted.descripcion || extracted.tarea,
+      tarea: tareaFinal,
+      descripcion: descripcionFinal,
       fecha: extracted.fecha,
+      clasificacion: extracted.clasificacion || 'Otro',
       contactoId,
       contactoNombre,
       model: MODEL_VOICE
@@ -724,6 +764,77 @@ app.post('/api/contacto', authenticateToken, validateContact, async (req, res, n
     res.status(201).json(guardado);
   } catch (error) {
     console.error('Error creando contacto', { error: error.message, userId: req.user.id });
+    next(error);
+  }
+});
+
+// POST - Añadir interacción desde nota de voz (guarda el audio base64, IA solo extrae contacto)
+app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async (req, res, next) => {
+  try {
+    const contactoId = req.params.id;
+    const tempId = req.body && req.body.tempId;
+    if (!tempId || typeof tempId !== 'string') {
+      return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const doc = await VoiceNoteTemp.findOne({ _id: tempId.trim(), usuarioId: req.user.id });
+    if (!doc) {
+      return res.status(404).json({ error: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    const contacto = await Contacto.findOne({ _id: contactoId, usuarioId: req.user.id });
+    if (!contacto) {
+      return res.status(404).json({ error: 'Contacto no encontrado.' });
+    }
+    const nuevaInteraccion = {
+      fechaHora: new Date(),
+      descripcion: '[Nota de voz]',
+      audioBase64: doc.audioBase64
+    };
+    contacto.interacciones = contacto.interacciones || [];
+    contacto.interacciones.push(nuevaInteraccion);
+    contacto.markModified('interacciones');
+    await contacto.save();
+    await VoiceNoteTemp.deleteOne({ _id: doc._id });
+    res.json(contacto);
+  } catch (error) {
+    console.error('Error en from-voice interacción:', error?.message);
+    next(error);
+  }
+});
+
+// POST - Añadir tarea desde nota de voz (guarda el audio base64)
+app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, res, next) => {
+  try {
+    const contactoId = req.params.id;
+    const tempId = req.body && req.body.tempId;
+    if (!tempId || typeof tempId !== 'string') {
+      return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const doc = await VoiceNoteTemp.findOne({ _id: tempId.trim(), usuarioId: req.user.id });
+    if (!doc) {
+      return res.status(404).json({ error: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    const contacto = await Contacto.findOne({ _id: contactoId, usuarioId: req.user.id });
+    if (!contacto) {
+      return res.status(404).json({ error: 'Contacto no encontrado.' });
+    }
+    const fechaEjecucion = req.body.fechaHoraEjecucion ? new Date(req.body.fechaHoraEjecucion) : new Date();
+    const clasificacion = req.body.clasificacion && ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'].includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
+    const nuevaTarea = {
+      fechaHoraCreacion: new Date(),
+      descripcion: '[Nota de voz]',
+      audioBase64: doc.audioBase64,
+      fechaHoraEjecucion: isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion,
+      clasificacion,
+      completada: false
+    };
+    contacto.tareas = contacto.tareas || [];
+    contacto.tareas.push(nuevaTarea);
+    contacto.markModified('tareas');
+    await contacto.save();
+    await VoiceNoteTemp.deleteOne({ _id: doc._id });
+    res.json(contacto);
+  } catch (error) {
+    console.error('Error en from-voice tarea:', error?.message);
     next(error);
   }
 });

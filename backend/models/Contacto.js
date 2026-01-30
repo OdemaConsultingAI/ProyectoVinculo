@@ -18,11 +18,13 @@ const contactoSchema = new mongoose.Schema({
   fechaRecordatorio: { type: Date, default: null },
   interacciones: [{
     fechaHora: { type: Date, default: Date.now },
-    descripcion: String
+    descripcion: String,
+    audioBase64: { type: String, default: '' } // Nota de voz: audio sin resumir
   }],
   tareas: [{
     fechaHoraCreacion: { type: Date, default: Date.now },
     descripcion: String, // Notas de la tarea (puede ser diferente a la interacción)
+    audioBase64: { type: String, default: '' }, // Nota de voz: audio sin resumir
     fechaHoraEjecucion: Date,
     clasificacion: String, // 'Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', etc.
     completada: { type: Boolean, default: false },

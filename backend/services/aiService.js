@@ -10,6 +10,7 @@ const os = require('os');
 const OpenAI = require('openai');
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+/** Límite diario de consultas de IA (notas de voz) para usuarios Free. Premium sin límite. */
 const LIMITE_PETICIONES_GRATIS = 10;
 const COSTE_ESTIMADO_POR_PETICION_USD = 0.001;
 
@@ -139,12 +140,15 @@ function getVoicePrompt() {
   return DEFAULT_VOICE_PROMPT;
 }
 
+/** Categorías de tarea permitidas (deben coincidir con la app). */
+const CLASIFICACIONES_TAREA = ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'];
+
 /**
  * Clasifica la nota de voz en interacción o tarea y extrae datos.
  * Usa siempre el modelo GPT-4o-mini y el prompt de voice-to-action.txt.
  * @param {string} texto - Texto transcrito
  * @param {string[]} nombresContactos - Nombres de contactos del usuario para desambiguar
- * @returns {Promise<{ tipo: 'interacción'|'tarea', vinculo: string, tarea: string, descripcion: string, fecha: string }>}
+ * @returns {Promise<{ tipo: 'interacción'|'tarea', vinculo: string, tarea: string, descripcion: string, fecha: string, clasificacion: string }>}
  */
 async function extractVoiceAction(texto, nombresContactos = []) {
   const client = getClient();
@@ -156,7 +160,7 @@ async function extractVoiceAction(texto, nombresContactos = []) {
 
 Texto transcrito: "${texto}"
 
-Responde solo con el JSON, ejemplo: {"tipo":"tarea","vinculo":"Juan","tarea":"Comprar regalo","descripcion":"Comprar regalo para Juan","fecha":"2026-02-05"}`;
+Responde solo con el JSON de 4 claves: tipo, vinculo, clasificacion, fecha. No reescribas el texto.`;
 
   const completion = await client.chat.completions.create({
     model: MODEL_VOICE,
@@ -164,7 +168,7 @@ Responde solo con el JSON, ejemplo: {"tipo":"tarea","vinculo":"Juan","tarea":"Co
       { role: 'system', content: systemContent },
       { role: 'user', content: userContent }
     ],
-    temperature: 0.2,
+    temperature: 0.3,
     max_tokens: 256
   });
 
@@ -177,20 +181,23 @@ Responde solo con el JSON, ejemplo: {"tipo":"tarea","vinculo":"Juan","tarea":"Co
     parsed = {
       tipo: 'tarea',
       vinculo: 'Sin asignar',
-      tarea: texto || 'Tarea desde voz',
-      descripcion: texto || '',
-      fecha: new Date().toISOString().slice(0, 10)
+      fecha: new Date().toISOString().slice(0, 10),
+      clasificacion: 'Otro'
     };
   }
 
   const tipo = (parsed.tipo === 'interacción' || parsed.tipo === 'interaccion') ? 'interacción' : 'tarea';
   const hoy = new Date().toISOString().slice(0, 10);
+  const clasificacionRaw = typeof parsed.clasificacion === 'string' ? parsed.clasificacion.trim() : 'Otro';
+  const clasificacion = CLASIFICACIONES_TAREA.includes(clasificacionRaw) ? clasificacionRaw : 'Otro';
+
   return {
     tipo,
     vinculo: typeof parsed.vinculo === 'string' ? parsed.vinculo.trim() : 'Sin asignar',
-    tarea: typeof parsed.tarea === 'string' ? parsed.tarea.trim() : (texto || ''),
-    descripcion: typeof parsed.descripcion === 'string' ? parsed.descripcion.trim() : (parsed.tarea || texto || ''),
-    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy
+    tarea: '',
+    descripcion: '',
+    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy,
+    clasificacion
   };
 }
 
