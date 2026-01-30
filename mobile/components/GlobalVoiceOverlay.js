@@ -443,10 +443,10 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                         if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                         closeVoicePreview();
                         Alert.alert(
-                          'Interacción guardada',
-                          'Se guardó como texto. Toca "Ver interacciones" para verla.',
+                          'Momento guardado',
+                          'Se guardó como texto. Toca "Ver momentos" para verlo.',
                           [
-                            { text: 'Ver interacciones', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
+                            { text: 'Ver momentos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
                             { text: 'Cerrar', style: 'cancel' }
                           ]
                         );
@@ -456,7 +456,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     }}
                   >
                     <Ionicons name="chatbubble-outline" size={22} color="white" />
-                    <Text style={styles.modalVoicePreviewButtonText}>Guardar como interacción</Text>
+                    <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
                   </TouchableOpacity>
                 </>
               )}

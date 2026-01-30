@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import * as Notifications from 'expo-notifications';
 
 import VinculosScreen from './screens/VinculosScreen';
 import GestosScreen from './screens/GestosScreen';
@@ -15,6 +16,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import { isAuthenticated } from './services/authService';
+import { registerAndSendPushToken } from './services/pushNotificationService';
 
 const Tab = createBottomTabNavigator();
 
@@ -27,6 +29,33 @@ export default function App() {
   useEffect(() => {
     checkAuth();
   }, []);
+
+  // Etapa 1+2 push: registrar token y enviarlo al backend cuando el usuario está autenticado
+  useEffect(() => {
+    if (!authenticated || showSplash) return;
+    registerAndSendPushToken().catch(() => {});
+  }, [authenticated, showSplash]);
+
+  // Etapa 4 push: al tocar una notificación, navegar a la pantalla según data.tipo
+  useEffect(() => {
+    if (!authenticated || showSplash) return;
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response?.notification?.request?.content?.data || {};
+      const tipo = data.tipo || data.type;
+      const nav = navigationRef.current;
+      if (!nav) return;
+      if (tipo === 'gesto') {
+        nav.navigate('Gestos', { contactoId: data.contactoId, refreshGestos: true });
+      } else if (tipo === 'riego' || tipo === 'cumpleaños' || tipo === 'contacto') {
+        nav.navigate('Vínculos', { contactoId: data.contactoId });
+      } else if (tipo === 'test') {
+        nav.navigate('Configuración');
+      } else {
+        nav.navigate('Vínculos');
+      }
+    });
+    return () => sub.remove();
+  }, [authenticated, showSplash]);
 
   const checkAuth = async () => {
     try {

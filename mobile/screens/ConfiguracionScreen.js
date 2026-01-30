@@ -16,6 +16,9 @@ export default function ConfiguracionScreen({ onLogout }) {
   const [cambiandoPassword, setCambiandoPassword] = useState(false);
   const [actualizandoPlan, setActualizandoPlan] = useState(false);
   const [menuHamburguesaVisible, setMenuHamburguesaVisible] = useState(false);
+  const [pushPermiso, setPushPermiso] = useState(false);
+  const [pushTokenGuardado, setPushTokenGuardado] = useState(false);
+  const [activandoPush, setActivandoPush] = useState(false);
 
   const VERSION_APP = '1.0';
 
@@ -198,6 +201,54 @@ export default function ConfiguracionScreen({ onLogout }) {
                   </Text>
                 </View>
               </View>
+            </View>
+
+            {/* Notificaciones push (Etapa 1): estado y activar */}
+            <View style={styles.pushSection}>
+              <Text style={styles.pushSectionTitle}>Notificaciones push</Text>
+              <View style={styles.pushStatusRow}>
+                <Ionicons
+                  name={pushPermiso && pushTokenGuardado ? 'notifications' : 'notifications-off-outline'}
+                  size={20}
+                  color={pushPermiso && pushTokenGuardado ? COLORES.activo : COLORES.textoSecundario}
+                />
+                <Text style={styles.pushStatusText}>
+                  {pushPermiso && pushTokenGuardado
+                    ? 'Activadas (recordatorios de gestos y momentos)'
+                    : pushPermiso
+                      ? 'Permiso concedido'
+                      : 'Desactivadas'}
+                </Text>
+              </View>
+              {(!pushPermiso || !pushTokenGuardado) && (
+                <TouchableOpacity
+                  style={styles.pushActivarButton}
+                  onPress={async () => {
+                    setActivandoPush(true);
+                    const token = await registerForPushNotificationsAsync();
+                    await cargarEstadoPush();
+                    setActivandoPush(false);
+                    if (token) {
+                      Alert.alert('Listo', 'Recibirás recordatorios de gestos y momentos.');
+                    } else if (!pushPermiso) {
+                      Alert.alert(
+                        'Permiso necesario',
+                        'Activa las notificaciones en Ajustes del teléfono para recibir recordatorios.'
+                      );
+                    }
+                  }}
+                  disabled={activandoPush}
+                >
+                  {activandoPush ? (
+                    <ActivityIndicator color="white" size="small" />
+                  ) : (
+                    <>
+                      <Ionicons name="notifications" size={18} color="white" />
+                      <Text style={styles.pushActivarButtonText}>Activar notificaciones</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              )}
             </View>
 
             {/* Botón Actualizar a Premium: solo visible si NO es Premium */}
@@ -591,6 +642,45 @@ const styles = StyleSheet.create({
   premiumButtonText: {
     color: 'white',
     fontSize: 16,
+    fontWeight: '600',
+  },
+  pushSection: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORES.fondoSecundario || '#F5F7FA',
+    borderRadius: 12,
+  },
+  pushSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORES.textoSecundario,
+    marginBottom: 8,
+  },
+  pushStatusRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  pushStatusText: {
+    fontSize: 14,
+    color: COLORES.texto,
+    flex: 1,
+  },
+  pushActivarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    backgroundColor: COLORES.agua,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 10,
+    marginTop: 10,
+  },
+  pushActivarButtonText: {
+    color: 'white',
+    fontSize: 14,
     fontWeight: '600',
   },
   logoutButton: {

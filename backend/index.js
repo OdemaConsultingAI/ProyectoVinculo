@@ -26,6 +26,8 @@ const {
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
 const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { sendPushToUser } = require('./services/pushService');
+const { sendRemindersGestosHoy } = require('./services/reminderService');
 const PALABRAS_PROHIBIDAS = require('./config/palabrasProhibidas');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
@@ -401,6 +403,81 @@ app.get('/api/auth/me', authenticateToken, async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// PUT - Registrar token Expo para notificaciones push (Etapa 2)
+const MAX_PUSH_TOKENS_PER_USER = 5;
+app.put('/api/auth/push-token', authenticateToken, async (req, res, next) => {
+  try {
+    const token = typeof req.body?.expoPushToken === 'string' ? req.body.expoPushToken.trim() : '';
+    if (!token || !token.startsWith('ExponentPushToken[')) {
+      return res.status(400).json({ error: 'expoPushToken inválido (formato ExponentPushToken[...])' });
+    }
+
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+
+    const tokens = usuario.expoPushTokens || [];
+    if (!tokens.includes(token)) {
+      usuario.expoPushTokens = [...tokens, token].slice(-MAX_PUSH_TOKENS_PER_USER);
+      await usuario.save();
+    }
+
+    res.json({ ok: true, message: 'Token de push registrado' });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST - Enviar notificación push de prueba al usuario actual (Etapa 2b)
+app.post('/api/auth/send-test-push', authenticateToken, async (req, res, next) => {
+  try {
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    const tokens = usuario.expoPushTokens || [];
+    if (tokens.length === 0) {
+      return res.status(400).json({
+        error: 'No tienes ningún dispositivo registrado para notificaciones. Activa las notificaciones en la app y vuelve a entrar.',
+      });
+    }
+    const result = await sendPushToUser(usuario, {
+      title: 'Vínculo – Prueba',
+      body: '¡Las notificaciones push están funcionando! 🌱',
+      data: { tipo: 'test' },
+    });
+    res.json({
+      ok: true,
+      message: 'Notificación de prueba enviada',
+      success: result.success,
+      failed: result.failed,
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST - Cron: enviar recordatorios de gestos del día (Etapa 3)
+// Protegido por CRON_SECRET (header X-Cron-Secret). Llamar desde Render Cron o similar.
+app.post('/api/cron/send-reminders', (req, res, next) => {
+  const secret = req.headers['x-cron-secret'] || req.query.secret;
+  if (!process.env.CRON_SECRET || secret !== process.env.CRON_SECRET) {
+    return res.status(401).json({ error: 'No autorizado' });
+  }
+  sendRemindersGestosHoy()
+    .then((result) => {
+      res.json({
+        ok: true,
+        message: 'Recordatorios enviados',
+        sent: result.sent,
+        failed: result.failed,
+        details: result.details,
+      });
+    })
+    .catch((err) => next(err));
 });
 
 // GET - Tipos de Gesto para filtros (sin paréntesis). La lista completa con paréntesis se usa en el prompt de IA.

@@ -980,10 +980,10 @@ export default function GestosScreen() {
                       setVoicePreviewTranscription(null);
                       setVoiceTranscribing(false);
                       Alert.alert(
-                        'Interacción guardada',
-                        'Se guardó como texto. Toca "Ver interacciones" para ir directo a verla.',
+                        'Momento guardado',
+                        'Se guardó como texto. Toca "Ver momentos" para ir directo a verlo.',
                         [
-                          { text: 'Ver interacciones', onPress: () => navigation.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
+                          { text: 'Ver momentos', onPress: () => navigation.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
                           { text: 'Cerrar', style: 'cancel' }
                         ]
                       );
@@ -993,7 +993,7 @@ export default function GestosScreen() {
                   }}
                 >
                   <Ionicons name="chatbubble-outline" size={22} color="white" />
-                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como interacción</Text>
+                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
                 </TouchableOpacity>
               </>
               )}

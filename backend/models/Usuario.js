@@ -34,7 +34,9 @@ const usuarioSchema = new mongoose.Schema({
   aiUltimoResetFecha: { type: Date, default: null },
   aiPeticionesMes: { type: Number, default: 0 },
   aiUltimoResetMes: { type: Date, default: null },
-  aiEstimatedCostUsd: { type: Number, default: 0 }
+  aiEstimatedCostUsd: { type: Number, default: 0 },
+  // Etapa 2 push: tokens Expo para enviar notificaciones (varios dispositivos)
+  expoPushTokens: { type: [String], default: [] }
 }, {
   timestamps: true
 });
