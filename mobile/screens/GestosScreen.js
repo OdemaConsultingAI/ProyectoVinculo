@@ -13,7 +13,8 @@ import {
   Platform,
   Alert,
   ScrollView,
-  Animated
+  Animated,
+  Linking
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -80,34 +81,56 @@ export default function GestosScreen() {
   const [modalVoicePreviewVisible, setModalVoicePreviewVisible] = useState(false);
   const [voicePreviewTranscription, setVoicePreviewTranscription] = useState(null);
   const [voiceTranscribing, setVoiceTranscribing] = useState(false);
+  const [voicePreviewFechaEjecucion, setVoicePreviewFechaEjecucion] = useState(() => new Date());
+  const [showDatePickerVoice, setShowDatePickerVoice] = useState(false);
+  const [datePickerModeVoice, setDatePickerModeVoice] = useState('date');
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
+  const transcribeGenRef = useRef(0);
 
-  // Transcribir nota temporal con Whisper cuando se abre el modal con tempId
+  // Transcribir nota temporal con Whisper cuando se abre el modal con tempId (solo aplicar resultado de la última petición)
   useEffect(() => {
     if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
+    const gen = ++transcribeGenRef.current;
     console.log('[GestosScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
     setVoiceTranscribing(true);
     setVoicePreviewTranscription(null);
     transcribeVoiceTemp(voicePreviewTempId).then((result) => {
+      if (gen !== transcribeGenRef.current) return;
       setVoiceTranscribing(false);
       console.log('[GestosScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length, tipo: result.tipo } : { error: result.error });
       if (result.success) {
         setVoicePreviewTranscription(result.texto || '');
+        const hoyStr = new Date().toISOString().slice(0, 10);
+        const fechaStr = result.fecha || hoyStr;
+        const fechaClamped = (result.tipo === 'tarea' && fechaStr < hoyStr) ? hoyStr : fechaStr;
         setVoicePreviewData({
           texto: result.texto || '',
           tipo: result.tipo || 'tarea',
           vinculo: result.vinculo || 'Sin asignar',
           tarea: result.tarea || '',
-          descripcion: result.descripcion || result.tarea || '',
-          fecha: result.fecha || new Date().toISOString().slice(0, 10),
+          descripcion: (result.descripcion && result.descripcion.trim()) ? result.descripcion.trim() : (result.texto || ''),
+          fecha: fechaClamped,
           clasificacion: TIPOS_DE_GESTO_DISPLAY.includes(result.clasificacion) ? result.clasificacion : 'Otro',
           contactoId: result.contactoId || null,
           contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
         });
+        const [y, m, d] = fechaClamped.split('-').map(Number);
+        const horaStr = (result.hora || '09:00').toString().trim();
+        const horaParts = horaStr.match(/^(\d{1,2}):(\d{2})$/);
+        const h = horaParts ? Math.min(23, Math.max(0, parseInt(horaParts[1], 10))) : 9;
+        const min = horaParts ? Math.min(59, Math.max(0, parseInt(horaParts[2], 10))) : 0;
+        let fechaDate = new Date(y || new Date().getFullYear(), (m || 1) - 1, d || 1, h, min, 0, 0);
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        if (result.tipo === 'tarea' && fechaDate.getTime() < hoy.getTime()) {
+          fechaDate.setFullYear(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        }
+        setVoicePreviewFechaEjecucion(isNaN(fechaDate.getTime()) ? new Date() : fechaDate);
       } else {
         setVoicePreviewTranscription(result.error || 'Error al transcribir');
       }
     }).catch((err) => {
+      if (gen !== transcribeGenRef.current) return;
       console.log('[GestosScreen] transcribeVoiceTemp excepción:', err?.message);
       setVoiceTranscribing(false);
       setVoicePreviewTranscription('Error al transcribir');
@@ -387,7 +410,7 @@ export default function GestosScreen() {
     setModalCrearTareaVisible(true);
   };
 
-  // Abrir modal "Crear gesto" o "Historial" cuando se navega desde el overlay
+  // Abrir modal "Crear gesto" o "Historial" cuando se navega desde el overlay; refrescar lista si viene de guardar gesto desde voz
   useFocusEffect(
     useCallback(() => {
       if (route.params?.openCrearGesto) {
@@ -398,7 +421,11 @@ export default function GestosScreen() {
         navigation.setParams({ openHistorialGestos: undefined });
         setModalHistorialVisible(true);
       }
-    }, [route.params?.openCrearGesto, route.params?.openHistorialGestos, navigation])
+      if (route.params?.refreshGestos) {
+        navigation.setParams({ refreshGestos: undefined });
+        cargarTareas();
+      }
+    }, [route.params?.openCrearGesto, route.params?.openHistorialGestos, route.params?.refreshGestos, navigation])
   );
 
   const cerrarModalCrearTarea = () => {
@@ -555,10 +582,10 @@ export default function GestosScreen() {
             <View style={styles.tareaInfo}>
               {/* Fila 1: Acción (con emoji) a la izquierda, nombre del contacto a la derecha */}
               <View style={styles.tareaHeader}>
-                <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                  <Text style={styles.tareaTitulo} numberOfLines={1}>
-                    {gestoConfig.emoji} {clasificacion}
-                  </Text>
+                  <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <Text style={styles.tareaTitulo} numberOfLines={1}>
+                      {gestoConfig.emoji} {gestoConfig.actionLabel ?? clasificacion}
+                    </Text>
                   {item.esRecurrente && (
                     <View style={styles.recurrenteBadge}>
                       <Text style={styles.recurrenteBadgeText}>Anual</Text>
@@ -597,12 +624,12 @@ export default function GestosScreen() {
                   activeOpacity={0.8}
                 >
                   <Ionicons name={gestoConfig.icon} size={20} color="white" />
-                  <Text style={styles.accionButtonText}>{clasificacion}</Text>
+                  <Text style={styles.accionButtonText}>{gestoConfig.actionLabel ?? clasificacion}</Text>
                 </TouchableOpacity>
               ) : (
                 <View style={[styles.accionButton, styles.accionButtonInactivo]}>
                   <Text style={styles.accionButtonEmoji}>{gestoConfig.emoji}</Text>
-                  <Text style={styles.accionButtonTextInactivo}>{clasificacion}</Text>
+                  <Text style={styles.accionButtonTextInactivo}>{gestoConfig.actionLabel ?? clasificacion}</Text>
                 </View>
               )}
             </View>
@@ -827,14 +854,55 @@ export default function GestosScreen() {
               )}
               {voicePreviewData && (
                 <>
-                  <Text style={styles.modalVoicePreviewLabel}>Dijiste:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.texto || '—'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Contacto:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Gesto extraído:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.tarea || '—'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Fecha:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.fecha || '—'}</Text>
+                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 8, fontWeight: '700' }]}>Así se verá tu gesto</Text>
+                  <View style={styles.previewGestoCard}>
+                    <View style={styles.previewGestoHeader}>
+                      <Text style={styles.previewGestoTipo} numberOfLines={1}>
+                        {getGestoConfig(voicePreviewData.clasificacion).emoji} {getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}
+                      </Text>
+                      <Text style={styles.previewGestoContacto} numberOfLines={1}>
+                        {voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}
+                      </Text>
+                    </View>
+                    <Text style={styles.previewGestoDescripcion} numberOfLines={3}>
+                      {voicePreviewData.descripcion || voicePreviewData.texto || voicePreviewTranscription || '—'}
+                    </Text>
+                    <View style={styles.previewGestoMeta}>
+                      <TouchableOpacity
+                        style={styles.previewGestoFechaBadge}
+                        onPress={() => { setDatePickerModeVoice('date'); setShowDatePickerVoice(true); }}
+                      >
+                        <Text style={styles.previewGestoFechaText}>
+                          {voicePreviewFechaEjecucion.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · {voicePreviewFechaEjecucion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                        <Ionicons name="calendar-outline" size={16} color={COLORES.texto} />
+                      </TouchableOpacity>
+                      <View style={[styles.previewGestoAccionButton, { backgroundColor: getGestoConfig(voicePreviewData.clasificacion).color }]}>
+                        <Ionicons name={getGestoConfig(voicePreviewData.clasificacion).icon} size={18} color="white" />
+                        <Text style={styles.previewGestoAccionText}>{getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  {showDatePickerVoice && (
+                    <DateTimePicker
+                      value={voicePreviewFechaEjecucion}
+                      mode={datePickerModeVoice}
+                      minimumDate={new Date()}
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(e, d) => {
+                        if (e.type === 'dismissed') { setShowDatePickerVoice(false); return; }
+                        const date = d || voicePreviewFechaEjecucion;
+                        if (datePickerModeVoice === 'date') {
+                          setVoicePreviewFechaEjecucion(date);
+                          if (Platform.OS === 'android') setShowDatePickerVoice(false);
+                          else setDatePickerModeVoice('time');
+                        } else {
+                          setVoicePreviewFechaEjecucion(date);
+                          setShowDatePickerVoice(false);
+                        }
+                      }}
+                    />
+                  )}
                 </>
               )}
             </ScrollView>
@@ -863,9 +931,10 @@ export default function GestosScreen() {
                         Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
                         return;
                       }
-                      const fechaEjecucion = new Date(voicePreviewData.fecha);
                       const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
-                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
+                      let fechaEjecucion = voicePreviewFechaEjecucion && !isNaN(voicePreviewFechaEjecucion.getTime()) ? voicePreviewFechaEjecucion : new Date();
+                      if (fechaEjecucion.getTime() < Date.now()) fechaEjecucion = new Date();
+                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       cargarTareas();
                       setModalVoicePreviewVisible(false);
@@ -874,7 +943,7 @@ export default function GestosScreen() {
                       setVoicePreviewTempId(null);
                       setVoicePreviewTranscription(null);
                       setVoiceTranscribing(false);
-                      Alert.alert('Listo', 'Gesto guardado (nota de voz).');
+                      Alert.alert('Gesto guardado', 'Tu gesto se guardó correctamente. Ya está en la lista.');
                     } catch (e) {
                       Alert.alert('Error', e.message || 'No se pudo guardar.');
                     }
@@ -1180,6 +1249,7 @@ export default function GestosScreen() {
                     <DateTimePicker
                       value={newTaskFechaEjecucion}
                       mode={datePickerModeCrear}
+                      minimumDate={new Date()}
                       is24Hour
                       display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                       onChange={(e, d) => {
@@ -1462,6 +1532,79 @@ const styles = StyleSheet.create({
     color: COLORES.textoSecundario,
     marginTop: 12,
     marginBottom: 4,
+  },
+  resumenGestoCard: {
+    backgroundColor: COLORES.fondoSecundario || '#f0f2f5',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  previewGestoCard: {
+    backgroundColor: COLORES.fondoSecundario || '#f0f2f5',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORES.burbujaBorde || '#E0E0E0',
+  },
+  previewGestoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  previewGestoTipo: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORES.texto,
+    flex: 1,
+  },
+  previewGestoContacto: {
+    fontSize: 14,
+    color: COLORES.textoSecundario,
+    marginLeft: 8,
+    maxWidth: '45%',
+  },
+  previewGestoDescripcion: {
+    fontSize: 14,
+    color: COLORES.texto,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  previewGestoMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  previewGestoFechaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: COLORES.aguaClaro || '#E1F5FE',
+    borderRadius: 8,
+  },
+  previewGestoFechaText: {
+    fontSize: 13,
+    color: COLORES.texto,
+    fontWeight: '600',
+  },
+  previewGestoAccionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  previewGestoAccionText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '600',
   },
   modalVoicePreviewText: {
     fontSize: 15,

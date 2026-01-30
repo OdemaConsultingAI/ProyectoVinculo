@@ -179,7 +179,7 @@ export default function ConfiguracionScreen({ onLogout }) {
                 </View>
               </View>
               
-              {/* Plan del usuario */}
+              {/* Plan del usuario: mostrar "Usuario Premium" y ocultar botón si ya es Premium */}
               <View style={styles.planContainer}>
                 <View style={[
                   styles.planBadge,
@@ -194,13 +194,13 @@ export default function ConfiguracionScreen({ onLogout }) {
                     styles.planText,
                     usuario.plan === 'Premium' && styles.planTextPremium
                   ]}>
-                    Plan {usuario.plan || 'Free'}
+                    {usuario.plan === 'Premium' ? 'Usuario Premium' : `Plan ${usuario.plan || 'Free'}`}
                   </Text>
                 </View>
               </View>
             </View>
 
-            {/* Primero: Actualizar a Premium */}
+            {/* Botón Actualizar a Premium: solo visible si NO es Premium */}
             {usuario.plan !== 'Premium' && (
               <TouchableOpacity 
                 style={styles.premiumButton} 

@@ -204,7 +204,7 @@ ${listaClasificacion}
 
 Texto transcrito: "${texto}"
 
-Responde solo con el JSON de 4 claves: tipo, vinculo, clasificacion, fecha. No reescribas el texto.`;
+Responde solo con el JSON de 6 claves: tipo, vinculo, clasificacion, fecha, hora (HH:mm 24h), descripcion (texto breve para la tarjeta). No reescribas el audio completo.`;
 
   const completion = await client.chat.completions.create({
     model: MODEL_VOICE,
@@ -226,23 +226,43 @@ Responde solo con el JSON de 4 claves: tipo, vinculo, clasificacion, fecha. No r
       tipo: 'tarea',
       vinculo: 'Sin asignar',
       fecha: new Date().toISOString().slice(0, 10),
-      clasificacion: 'Otro'
+      clasificacion: 'Otro',
+      hora: '09:00',
+      descripcion: ''
     };
   }
 
   const tipo = (parsed.tipo === 'interacción' || parsed.tipo === 'interaccion') ? 'interacción' : 'tarea';
   const hoy = new Date().toISOString().slice(0, 10);
+  let fecha = typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy;
+  // Para tareas, nunca devolver fecha pasada (gestos son para el futuro)
+  if (tipo === 'tarea' && fecha < hoy) fecha = hoy;
+
   const clasificacionRaw = typeof parsed.clasificacion === 'string' ? parsed.clasificacion.trim() : 'Otro';
   const clasificacionNormalized = getDisplayPart(clasificacionRaw);
   const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(clasificacionNormalized) ? clasificacionNormalized : 'Otro';
+
+  // Hora en HH:mm (24h). Validar formato; si no viene o es inválido, "09:00"
+  let hora = typeof parsed.hora === 'string' ? parsed.hora.trim() : '09:00';
+  const horaMatch = hora.match(/^(\d{1,2}):(\d{2})$/);
+  if (horaMatch) {
+    const h = Math.min(23, Math.max(0, parseInt(horaMatch[1], 10)));
+    const m = Math.min(59, Math.max(0, parseInt(horaMatch[2], 10)));
+    hora = `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+  } else {
+    hora = '09:00';
+  }
+
+  const descripcion = typeof parsed.descripcion === 'string' ? parsed.descripcion.trim().slice(0, 500) : '';
 
   const usage = completion.usage || null;
   return {
     tipo,
     vinculo: typeof parsed.vinculo === 'string' ? parsed.vinculo.trim() : 'Sin asignar',
     tarea: '',
-    descripcion: '',
-    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy,
+    descripcion,
+    fecha,
+    hora,
     clasificacion,
     usage
   };

@@ -10,6 +10,7 @@ import {
   Alert,
   ActivityIndicator,
   Dimensions,
+  Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useVoiceGlobal } from '../context/VoiceGlobalContext';
@@ -18,7 +19,9 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import { loadContacts, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
 
-import { TIPOS_DE_GESTO_DISPLAY } from '../constants/tiposDeGesto';
+import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
+
+const getGestoConfig = (clasificacion) => GESTO_ICON_CONFIG[clasificacion] || GESTO_ICON_CONFIG['Otro'];
 const TAB_BAR_OFFSET = 56;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -50,6 +53,9 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
   const recordingActiveRef = useRef(false);
   const transcribeGenRef = useRef(0);
   const [vinculos, setVinculos] = useState([]);
+  const [voicePreviewFechaEjecucion, setVoicePreviewFechaEjecucion] = useState(() => new Date());
+  const [showDatePickerVoice, setShowDatePickerVoice] = useState(false);
+  const [datePickerModeVoice, setDatePickerModeVoice] = useState('date');
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8) + TAB_BAR_OFFSET;
   const topInset = Math.max(insets.top, 0);
@@ -99,17 +105,32 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
         setVoicePreviewTranscription(result.texto || '');
         const contactoId = voicePreviewContactoFromModal?.id ?? result.contactoId ?? null;
         const contactoNombre = voicePreviewContactoFromModal?.nombre ?? result.contactoNombre ?? result.vinculo ?? 'Sin asignar';
+        const hoyStr = new Date().toISOString().slice(0, 10);
+        const fechaStr = result.fecha || hoyStr;
+        const fechaClamped = (result.tipo === 'tarea' && fechaStr < hoyStr) ? hoyStr : fechaStr;
         setVoicePreviewData({
           texto: result.texto || '',
           tipo: result.tipo || 'tarea',
           vinculo: contactoNombre,
           tarea: result.tarea || '',
           descripcion: result.descripcion || result.tarea || '',
-          fecha: result.fecha || new Date().toISOString().slice(0, 10),
-          clasificacion: CLASIFICACIONES_TAREAS.includes(result.clasificacion) ? result.clasificacion : 'Otro',
+          fecha: fechaClamped,
+          clasificacion: TIPOS_DE_GESTO_DISPLAY.includes(result.clasificacion) ? result.clasificacion : 'Otro',
           contactoId,
           contactoNombre,
         });
+        const [y, m, d] = fechaClamped.split('-').map(Number);
+        const horaStr = (result.hora || '09:00').toString().trim();
+        const horaParts = horaStr.match(/^(\d{1,2}):(\d{2})$/);
+        const h = horaParts ? Math.min(23, Math.max(0, parseInt(horaParts[1], 10))) : 9;
+        const min = horaParts ? Math.min(59, Math.max(0, parseInt(horaParts[2], 10))) : 0;
+        let fechaDate = new Date(y || new Date().getFullYear(), (m || 1) - 1, d || 1, h, min, 0, 0);
+        const hoy = new Date();
+        hoy.setHours(0, 0, 0, 0);
+        if (result.tipo === 'tarea' && fechaDate.getTime() < hoy.getTime()) {
+          fechaDate.setFullYear(hoy.getFullYear(), hoy.getMonth(), hoy.getDate());
+        }
+        setVoicePreviewFechaEjecucion(isNaN(fechaDate.getTime()) ? new Date() : fechaDate);
       } else {
         setVoicePreviewTranscription(result.error || 'Error al transcribir');
       }
@@ -121,10 +142,12 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     });
   }, [modalVoicePreviewVisible, voicePreviewTempId]);
 
-  // Cargar contactos cuando el modal está visible
+  // Cargar contactos cuando el modal está visible (loadContacts devuelve { contactos }, no el array)
   useEffect(() => {
     if (!modalVoicePreviewVisible) return;
-    loadContacts().then(setVinculos).catch(() => setVinculos([]));
+    loadContacts()
+      .then((res) => setVinculos(Array.isArray(res?.contactos) ? res.contactos : []))
+      .catch(() => setVinculos([]));
   }, [modalVoicePreviewVisible]);
 
   const formatRecordingTime = (sec) => {
@@ -298,16 +321,55 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
               )}
               {voicePreviewData && (
                 <>
-                  <Text style={styles.modalVoicePreviewLabel}>Dijiste:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.texto || '—'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Contacto:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Clasificación:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.clasificacion || 'Otro'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Gesto extraído:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.tarea || '—'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Fecha:</Text>
-                  <Text style={styles.modalVoicePreviewText}>{voicePreviewData.fecha || '—'}</Text>
+                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 8, fontWeight: '700' }]}>Así se verá tu gesto</Text>
+                  <View style={styles.previewGestoCard}>
+                    <View style={styles.previewGestoHeader}>
+                      <Text style={styles.previewGestoTipo} numberOfLines={1}>
+                        {getGestoConfig(voicePreviewData.clasificacion).emoji} {getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}
+                      </Text>
+                      <Text style={styles.previewGestoContacto} numberOfLines={1}>
+                        {voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}
+                      </Text>
+                    </View>
+                    <Text style={styles.previewGestoDescripcion} numberOfLines={3}>
+                      {voicePreviewData.descripcion || voicePreviewData.texto || voicePreviewTranscription || '—'}
+                    </Text>
+                    <View style={styles.previewGestoMeta}>
+                      <TouchableOpacity
+                        style={styles.previewGestoFechaBadge}
+                        onPress={() => { setDatePickerModeVoice('date'); setShowDatePickerVoice(true); }}
+                      >
+                        <Text style={styles.previewGestoFechaText}>
+                          {voicePreviewFechaEjecucion.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · {voicePreviewFechaEjecucion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                        </Text>
+                        <Ionicons name="calendar-outline" size={16} color={COLORES.texto} />
+                      </TouchableOpacity>
+                      <View style={[styles.previewGestoAccionButton, { backgroundColor: getGestoConfig(voicePreviewData.clasificacion).color }]}>
+                        <Ionicons name={getGestoConfig(voicePreviewData.clasificacion).icon} size={18} color="white" />
+                        <Text style={styles.previewGestoAccionText}>{getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}</Text>
+                      </View>
+                    </View>
+                  </View>
+                  {showDatePickerVoice && (
+                    <DateTimePicker
+                      value={voicePreviewFechaEjecucion}
+                      mode={datePickerModeVoice}
+                      minimumDate={new Date()}
+                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+                      onChange={(e, d) => {
+                        if (e.type === 'dismissed') { setShowDatePickerVoice(false); return; }
+                        const date = d || voicePreviewFechaEjecucion;
+                        if (datePickerModeVoice === 'date') {
+                          setVoicePreviewFechaEjecucion(date);
+                          if (Platform.OS === 'android') setShowDatePickerVoice(false);
+                          else setDatePickerModeVoice('time');
+                        } else {
+                          setVoicePreviewFechaEjecucion(date);
+                          setShowDatePickerVoice(false);
+                        }
+                      }}
+                    />
+                  )}
                 </>
               )}
             </ScrollView>
@@ -336,12 +398,21 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                           Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
                           return;
                         }
-                        const fechaEjecucion = new Date(voicePreviewData.fecha);
                         const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
-                        await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
+                        let fechaEjecucion = voicePreviewFechaEjecucion && !isNaN(voicePreviewFechaEjecucion.getTime()) ? voicePreviewFechaEjecucion : new Date();
+                        if (fechaEjecucion.getTime() < Date.now()) fechaEjecucion = new Date();
+                        await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
                         if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                         closeVoicePreview();
-                        Alert.alert('Listo', 'Gesto guardado (nota de voz).');
+                        navigationRef?.current?.navigate('Gestos', { refreshGestos: true });
+                        Alert.alert(
+                          'Gesto guardado',
+                          'Tu gesto se guardó correctamente. Ya está en la lista.',
+                          [
+                            { text: 'Ver gestos', onPress: () => navigationRef?.current?.navigate('Gestos', { refreshGestos: true }) },
+                            { text: 'Cerrar', style: 'cancel' },
+                          ]
+                        );
                       } catch (e) {
                         Alert.alert('Error', e.message || 'No se pudo guardar.');
                       }
@@ -577,12 +648,100 @@ const styles = StyleSheet.create({
     color: COLORES.texto,
     marginBottom: 8,
   },
+  resumenGestoCard: {
+    backgroundColor: COLORES.fondoSecundario || '#f0f2f5',
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 8,
+  },
+  previewGestoCard: {
+    backgroundColor: COLORES.fondoSecundario || '#f0f2f5',
+    borderRadius: 14,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: COLORES.burbujaBorde || '#E0E0E0',
+  },
+  previewGestoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  previewGestoTipo: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: COLORES.texto,
+    flex: 1,
+  },
+  previewGestoContacto: {
+    fontSize: 14,
+    color: COLORES.textoSecundario,
+    marginLeft: 8,
+    maxWidth: '45%',
+  },
+  previewGestoDescripcion: {
+    fontSize: 14,
+    color: COLORES.texto,
+    lineHeight: 20,
+    marginBottom: 10,
+  },
+  previewGestoMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flexWrap: 'wrap',
+  },
+  previewGestoFechaBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    backgroundColor: COLORES.aguaClaro || '#E1F5FE',
+    borderRadius: 8,
+  },
+  previewGestoFechaText: {
+    fontSize: 13,
+    color: COLORES.texto,
+    fontWeight: '600',
+  },
+  previewGestoAccionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  previewGestoAccionText: {
+    fontSize: 14,
+    color: 'white',
+    fontWeight: '600',
+  },
   modalVoicePreviewLabel: {
     fontSize: 12,
     fontWeight: '600',
     color: COLORES.textoSecundario,
     marginTop: 12,
     marginBottom: 4,
+  },
+  modalVoicePreviewDateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    backgroundColor: COLORES.fondoSecundario || '#f0f2f5',
+    borderRadius: 10,
+    marginTop: 4,
+    marginBottom: 8,
+  },
+  modalVoicePreviewDateText: {
+    fontSize: 15,
+    color: COLORES.texto,
   },
   modalVoicePreviewPlayButton: {
     flexDirection: 'row',
