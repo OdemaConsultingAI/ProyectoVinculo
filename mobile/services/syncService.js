@@ -542,7 +542,7 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
     if (response.status === 404) {
       throw new Error('El servidor no tiene la función de guardar nota de voz. Haz un despliegue del backend en Render con los últimos cambios.');
     }
-    throw new Error(data.error || data.message || 'Error al guardar la tarea.');
+    throw new Error(data.error || data.message || 'Error al guardar el gesto.');
   }
   const savedContact = await response.json();
   const cachedContacts = await loadContactsFromCache();

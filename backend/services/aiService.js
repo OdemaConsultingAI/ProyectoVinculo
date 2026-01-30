@@ -14,8 +14,24 @@ const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const LIMITE_PETICIONES_GRATIS = 10;
 const COSTE_ESTIMADO_POR_PETICION_USD = 0.001;
 
+/** Precios por millón de tokens para gpt-4o-mini (USD). Fuente: platform.openai.com/docs/pricing */
+const PRECIO_INPUT_PER_MILLION = 0.15;
+const PRECIO_OUTPUT_PER_MILLION = 0.60;
+
 /** Modelo fijo para voz → clasificación/extracción (bajo costo). */
 const MODEL_VOICE = 'gpt-4o-mini';
+
+/**
+ * Calcula el coste en USD de una llamada a GPT según tokens de entrada y salida.
+ * @param {number} promptTokens
+ * @param {number} completionTokens
+ * @returns {number} Coste en USD
+ */
+function calcCostFromUsage(promptTokens = 0, completionTokens = 0) {
+  const inputCost = (Number(promptTokens) / 1e6) * PRECIO_INPUT_PER_MILLION;
+  const outputCost = (Number(completionTokens) / 1e6) * PRECIO_OUTPUT_PER_MILLION;
+  return inputCost + outputCost;
+}
 
 function getClient() {
   if (!OPENAI_API_KEY || !OPENAI_API_KEY.trim()) {
@@ -99,10 +115,12 @@ Responde solo con el JSON, ejemplo: {"vinculo":"Juan","tarea":"Comprar libro de 
     parsed = { vinculo: 'Sin asignar', tarea: texto || 'Tarea desde voz', fecha: new Date().toISOString().slice(0, 10) };
   }
 
+  const usage = completion.usage || null;
   return {
     vinculo: typeof parsed.vinculo === 'string' ? parsed.vinculo.trim() : 'Sin asignar',
     tarea: typeof parsed.tarea === 'string' ? parsed.tarea.trim() : (texto || 'Tarea desde voz'),
-    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : new Date().toISOString().slice(0, 10)
+    fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : new Date().toISOString().slice(0, 10),
+    usage
   };
 }
 
@@ -112,10 +130,11 @@ Responde solo con el JSON, ejemplo: {"vinculo":"Juan","tarea":"Comprar libro de 
 async function voiceToTaskStructured(audioBuffer, mimeType, nombresContactos = []) {
   const texto = await transcribe(audioBuffer, mimeType);
   if (!texto || !texto.trim()) {
-    return { texto: '', vinculo: 'Sin asignar', tarea: 'Tarea desde voz', fecha: new Date().toISOString().slice(0, 10) };
+    return { texto: '', vinculo: 'Sin asignar', tarea: 'Tarea desde voz', fecha: new Date().toISOString().slice(0, 10), usage: null };
   }
   const extracted = await textToTask(texto, nombresContactos);
-  return { texto: texto.trim(), ...extracted };
+  const { usage } = extracted;
+  return { texto: texto.trim(), vinculo: extracted.vinculo, tarea: extracted.tarea, fecha: extracted.fecha, usage };
 }
 
 /** Ruta del archivo de prompt (editable). */
@@ -140,12 +159,35 @@ function getVoicePrompt() {
   return DEFAULT_VOICE_PROMPT;
 }
 
-/** Categorías de tarea permitidas (deben coincidir con la app). */
-const CLASIFICACIONES_TAREA = ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'];
+/**
+ * Lista completa de Tipos de Gesto para la IA.
+ * Lo que está entre paréntesis no se muestra en el filtro de la app; toda la lista se pasa al prompt para clasificar.
+ * Al guardar se usa solo la parte antes del paréntesis (clave de filtro).
+ */
+const TIPOS_DE_GESTO_FULL = [
+  'Llamar (para felicitar)',
+  'Visitar (en persona)',
+  'Enviar mensaje',
+  'Cumpleaños',
+  'Regalo',
+  'Evento',
+  'Otro'
+];
+
+/** Parte visible en filtro/chips: texto antes del primer " (" o toda la cadena. */
+function getDisplayPart(full) {
+  if (typeof full !== 'string' || !full.trim()) return 'Otro';
+  const idx = full.indexOf(' (');
+  return idx > 0 ? full.slice(0, idx).trim() : full.trim();
+}
+
+/** Lista solo para mostrar en filtro (sin paréntesis). Usada también para validar valor guardado. */
+const TIPOS_DE_GESTO_DISPLAY = TIPOS_DE_GESTO_FULL.map(getDisplayPart);
 
 /**
  * Clasifica la nota de voz en interacción o tarea y extrae datos.
  * Usa siempre el modelo GPT-4o-mini y el prompt de voice-to-action.txt.
+ * La lista completa TIPOS_DE_GESTO_FULL se inyecta en el mensaje para que la IA clasifique; al guardar se normaliza a la parte sin paréntesis.
  * @param {string} texto - Texto transcrito
  * @param {string[]} nombresContactos - Nombres de contactos del usuario para desambiguar
  * @returns {Promise<{ tipo: 'interacción'|'tarea', vinculo: string, tarea: string, descripcion: string, fecha: string, clasificacion: string }>}
@@ -156,7 +198,9 @@ async function extractVoiceAction(texto, nombresContactos = []) {
   const listaNombres = nombresContactos.length
     ? `Lista de nombres de contactos del usuario (usa uno de estos si aplica): ${nombresContactos.join(', ')}.`
     : '';
+  const listaClasificacion = `Opciones de clasificacion (devuelve exactamente UNA de estas cadenas, tal cual): ${TIPOS_DE_GESTO_FULL.join(', ')}.`;
   const userContent = `${listaNombres}
+${listaClasificacion}
 
 Texto transcrito: "${texto}"
 
@@ -189,15 +233,18 @@ Responde solo con el JSON de 4 claves: tipo, vinculo, clasificacion, fecha. No r
   const tipo = (parsed.tipo === 'interacción' || parsed.tipo === 'interaccion') ? 'interacción' : 'tarea';
   const hoy = new Date().toISOString().slice(0, 10);
   const clasificacionRaw = typeof parsed.clasificacion === 'string' ? parsed.clasificacion.trim() : 'Otro';
-  const clasificacion = CLASIFICACIONES_TAREA.includes(clasificacionRaw) ? clasificacionRaw : 'Otro';
+  const clasificacionNormalized = getDisplayPart(clasificacionRaw);
+  const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(clasificacionNormalized) ? clasificacionNormalized : 'Otro';
 
+  const usage = completion.usage || null;
   return {
     tipo,
     vinculo: typeof parsed.vinculo === 'string' ? parsed.vinculo.trim() : 'Sin asignar',
     tarea: '',
     descripcion: '',
     fecha: typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy,
-    clasificacion
+    clasificacion,
+    usage
   };
 }
 
@@ -207,6 +254,10 @@ module.exports = {
   voiceToTaskStructured,
   getVoicePrompt,
   extractVoiceAction,
+  calcCostFromUsage,
+  TIPOS_DE_GESTO_FULL,
+  TIPOS_DE_GESTO_DISPLAY,
+  getDisplayPart,
   MODEL_VOICE,
   LIMITE_PETICIONES_GRATIS,
   COSTE_ESTIMADO_POR_PETICION_USD

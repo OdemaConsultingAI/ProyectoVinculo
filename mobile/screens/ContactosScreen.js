@@ -315,7 +315,7 @@ export default function ContactosScreen() {
                           </View>
                           <View style={styles.taskSection}>
                               <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 10}}>
-                                 <Text style={styles.sectionTitle}>📌 Tarea / Contexto</Text>
+                                 <Text style={styles.sectionTitle}>📌 Próximo gesto / Contexto</Text>
                                  <TouchableOpacity style={styles.dateBtn} onPress={() => { setDateMode('date'); setShowDatePicker(true); }}>
                                      <Ionicons name="calendar" size={16} color="white" />
                                      <Text style={styles.dateBtnText}>{datosEditados.fechaRecordatorio ? new Date(datosEditados.fechaRecordatorio).toLocaleDateString() : "Agendar"}</Text>

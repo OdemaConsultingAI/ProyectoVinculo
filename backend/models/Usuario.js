@@ -32,6 +32,8 @@ const usuarioSchema = new mongoose.Schema({
   // Control de uso de IA (10 peticiones diarias gratuitas, luego medidor de coste)
   aiPeticionesHoy: { type: Number, default: 0 },
   aiUltimoResetFecha: { type: Date, default: null },
+  aiPeticionesMes: { type: Number, default: 0 },
+  aiUltimoResetMes: { type: Date, default: null },
   aiEstimatedCostUsd: { type: Number, default: 0 }
 }, {
   timestamps: true

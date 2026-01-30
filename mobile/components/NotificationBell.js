@@ -193,7 +193,7 @@ export default function NotificationBell() {
                           <Ionicons
                             name={
                               notif.tipo === 'tarea'
-                                ? 'checkmark-circle'
+                                ? 'heart'
                                 : notif.tipo === 'riego'
                                 ? 'water'
                                 : notif.tipo === 'cumpleanos'
@@ -234,7 +234,7 @@ export default function NotificationBell() {
                           <Ionicons
                             name={
                               notif.tipo === 'tarea'
-                                ? 'checkmark-circle'
+                                ? 'heart'
                                 : notif.tipo === 'riego'
                                 ? 'water'
                                 : notif.tipo === 'cumpleanos'

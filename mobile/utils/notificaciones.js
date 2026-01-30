@@ -98,7 +98,7 @@ export function buildNotificacionesFromContactos(contactos) {
               id: `tarea-${contacto._id}-${tarea.fechaHoraCreacion}`,
               tipo: 'tarea',
               prioridad: diasRestantes <= 0 ? 'urgente' : diasRestantes <= 3 ? 'alta' : 'media',
-              titulo: `📋 ${tarea.clasificacion || 'Tarea'}`,
+              titulo: `📋 ${tarea.clasificacion || 'Gesto'}`,
               descripcion: tarea.descripcion,
               contacto: contacto.nombre,
               contactoId: contacto._id,

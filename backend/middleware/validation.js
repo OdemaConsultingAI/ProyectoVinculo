@@ -125,7 +125,7 @@ const validateTask = [
     .optional()
     .trim()
     .isLength({ min: 1, max: 500 })
-    .withMessage('La descripción de la tarea debe tener entre 1 y 500 caracteres'),
+    .withMessage('La descripción del gesto debe tener entre 1 y 500 caracteres'),
   body('tareas.*.fechaHoraEjecucion')
     .optional()
     .custom((value) => {

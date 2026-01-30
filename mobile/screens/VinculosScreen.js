@@ -25,6 +25,7 @@ import * as Contacts from 'expo-contacts';
 import * as ImagePicker from 'expo-image-picker';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
@@ -45,8 +46,10 @@ import {
 } from '../services/syncService';
 import NetInfo from '@react-native-community/netinfo';
 import { validatePhone, validateBirthday, validateName, sanitizeText } from '../utils/validations';
-import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
+import { playFromBase64 } from '../services/voiceToTaskService';
+import { useVoiceGlobal } from '../context/VoiceGlobalContext';
 import NotificationBell from '../components/NotificationBell';
+import { TIPOS_DE_GESTO_DISPLAY } from '../constants/tiposDeGesto';
 
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
@@ -75,7 +78,6 @@ const FRECUENCIAS = {
 
 const PRIORIDADES = ['💖 Alta', '✨ Media', '💤 Baja'];
 const CLASIFICACIONES = ['Familia', 'Mejor Amigo', 'Amigo', 'Trabajo', 'Conocido'];
-const CLASIFICACIONES_TAREAS = ['Llamar', 'Visitar', 'Enviar mensaje', 'Regalo', 'Evento', 'Otro'];
 
 export default function VinculosScreen() {
   const route = useRoute();
@@ -117,83 +119,8 @@ export default function VinculosScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [dateMode, setDateMode] = useState('date');
   
-  // Voz → tarea/interacción (IA): grabación, preview y guardar
-  const [voiceRecording, setVoiceRecording] = useState(null);
-  const [sendingVoice, setSendingVoice] = useState(false);
-  const [recordingElapsed, setRecordingElapsed] = useState(0);
-  const [voicePreviewData, setVoicePreviewData] = useState(null);
-  const [voicePreviewAudioUri, setVoicePreviewAudioUri] = useState(null);
-  const [voicePreviewTempId, setVoicePreviewTempId] = useState(null);
-  const [modalVoicePreviewVisible, setModalVoicePreviewVisible] = useState(false);
-  const [voicePreviewTranscription, setVoicePreviewTranscription] = useState(null);
-  const [voiceTranscribing, setVoiceTranscribing] = useState(false);
-  const recordingPulseAnim = useRef(new Animated.Value(1)).current;
-
-  // Transcribir nota temporal con Whisper cuando se abre el modal con tempId
-  useEffect(() => {
-    if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
-    console.log('[VinculosScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
-    setVoiceTranscribing(true);
-    setVoicePreviewTranscription(null);
-    transcribeVoiceTemp(voicePreviewTempId).then((result) => {
-      setVoiceTranscribing(false);
-      console.log('[VinculosScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length, tipo: result.tipo } : { error: result.error });
-      if (result.success) {
-        setVoicePreviewTranscription(result.texto || '');
-        setVoicePreviewData({
-          texto: result.texto || '',
-          tipo: result.tipo || 'tarea',
-          vinculo: result.vinculo || 'Sin asignar',
-          tarea: result.tarea || '',
-          descripcion: result.descripcion || result.tarea || '',
-          fecha: result.fecha || new Date().toISOString().slice(0, 10),
-          clasificacion: CLASIFICACIONES_TAREAS.includes(result.clasificacion) ? result.clasificacion : 'Otro',
-          contactoId: result.contactoId || null,
-          contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
-        });
-      } else {
-        setVoicePreviewTranscription(result.error || 'Error al transcribir');
-      }
-    }).catch((err) => {
-      console.log('[VinculosScreen] transcribeVoiceTemp excepción:', err?.message);
-      setVoiceTranscribing(false);
-      setVoicePreviewTranscription('Error al transcribir');
-    });
-  }, [modalVoicePreviewVisible, voicePreviewTempId]);
-
-  // Timer de grabación (actualizar cada segundo)
-  useEffect(() => {
-    if (!voiceRecording) {
-      setRecordingElapsed(0);
-      return;
-    }
-    setRecordingElapsed(0);
-    const interval = setInterval(() => setRecordingElapsed(prev => prev + 1), 1000);
-    return () => clearInterval(interval);
-  }, [voiceRecording]);
-
-  // Animación del punto "grabando" (pulso)
-  const recordingActiveRef = useRef(false);
-  useEffect(() => {
-    if (!voiceRecording) {
-      recordingActiveRef.current = false;
-      return;
-    }
-    recordingActiveRef.current = true;
-    const loop = () => {
-      if (!recordingActiveRef.current) return;
-      Animated.sequence([
-        Animated.timing(recordingPulseAnim, { toValue: 1.3, duration: 500, useNativeDriver: true }),
-        Animated.timing(recordingPulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-      ]).start(() => loop());
-    };
-    loop();
-    return () => {
-      recordingActiveRef.current = false;
-      recordingPulseAnim.stopAnimation();
-    };
-  }, [voiceRecording]);
-
+  const { setVoicePreviewContactoFromModal, setCurrentContactForVoice } = useVoiceGlobal();
+  const inputNuevaInteraccionRef = useRef(null);
   // Estados para modal de interacciones (historial, se pueden editar)
   const [modalInteraccionesVisible, setModalInteraccionesVisible] = useState(false);
   const [textoInteraccion, setTextoInteraccion] = useState('');
@@ -212,7 +139,7 @@ export default function VinculosScreen() {
   const [modalTareasVisible, setModalTareasVisible] = useState(false);
   const [textoTarea, setTextoTarea] = useState('');
   const [fechaHoraEjecucion, setFechaHoraEjecucion] = useState(new Date());
-  const [clasificacionTarea, setClasificacionTarea] = useState('Llamar');
+  const [clasificacionTarea, setClasificacionTarea] = useState(TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
   const [tareaRecurrenteAnual, setTareaRecurrenteAnual] = useState(false);
   const [showDatePickerEjecucion, setShowDatePickerEjecucion] = useState(false);
   const [dateModeEjecucion, setDateModeEjecucion] = useState('date');
@@ -302,13 +229,20 @@ export default function VinculosScreen() {
     };
   }, []);
 
-  // Abrir modal de interacciones cuando se navega desde Tareas con openContactId / openContact
+  // Abrir modal de interacciones cuando se navega desde Tareas con openContactId / openContact; abrir Regar con openRegar
   useFocusEffect(
     useCallback(() => {
       const contact = route.params?.openContact;
       const id = route.params?.openContactId;
+      const openRegar = route.params?.openRegar;
+      if (openRegar) {
+        navigation.setParams({ openRegar: undefined });
+        abrirModalRegar();
+        return;
+      }
       if (contact) {
         setDatosEditados(contact);
+        setVoicePreviewContactoFromModal({ id: contact._id, nombre: contact.nombre });
         setModalInteraccionesVisible(true);
         navigation.setParams({ openContactId: undefined, openContact: undefined });
         return;
@@ -317,11 +251,21 @@ export default function VinculosScreen() {
       const found = vinculos.find(c => c._id === id);
       if (found) {
         setDatosEditados(found);
+        setVoicePreviewContactoFromModal({ id: found._id, nombre: found.nombre });
         setModalInteraccionesVisible(true);
         navigation.setParams({ openContactId: undefined });
       }
-    }, [route.params?.openContactId, route.params?.openContact, vinculos, navigation])
+    }, [route.params?.openContactId, route.params?.openContact, route.params?.openRegar, vinculos, navigation])
   );
+
+  // Sincronizar contacto actual para voz: cuando el modal de interacciones está abierto, el overlay usará este contacto al grabar
+  useEffect(() => {
+    if (modalInteraccionesVisible && datosEditados?._id) {
+      setCurrentContactForVoice({ id: datosEditados._id, nombre: datosEditados.nombre || 'Contacto' });
+    } else {
+      setCurrentContactForVoice(null);
+    }
+  }, [modalInteraccionesVisible, datosEditados?._id, datosEditados?.nombre]);
 
   // Animación de pulso para el botón flotante de swipe
   useEffect(() => {
@@ -776,7 +720,7 @@ export default function VinculosScreen() {
                   id: `tarea-${contacto._id}-${tarea.fechaHoraCreacion}`,
                   tipo: 'tarea',
                   prioridad: diasRestantes <= 0 ? 'urgente' : diasRestantes <= 3 ? 'alta' : 'media',
-                  titulo: `📋 ${tarea.clasificacion || 'Tarea'}`,
+                  titulo: `📋 ${tarea.clasificacion || 'Gesto'}`,
                   descripcion: tarea.descripcion,
                   contacto: contacto.nombre,
                   contactoId: contacto._id,
@@ -1397,7 +1341,7 @@ export default function VinculosScreen() {
   // Funciones para gestionar tareas (separadas, se pueden borrar y completar)
   const agregarTarea = async () => {
     if (!textoTarea.trim()) {
-      Alert.alert("Atención", "Describe la tarea.");
+      Alert.alert("Atención", "Describe el gesto.");
       return;
     }
     
@@ -1420,7 +1364,7 @@ export default function VinculosScreen() {
     };
     
     if (!datosEditados._id) {
-      Alert.alert("Error", "El contacto debe estar guardado antes de agregar tareas.");
+      Alert.alert("Error", "El contacto debe estar guardado antes de agregar gestos.");
       return;
     }
     
@@ -1463,11 +1407,11 @@ export default function VinculosScreen() {
           console.log('📝 Tarea guardada localmente, se sincronizará cuando haya conexión');
         }
       } else {
-        Alert.alert("Error", "No se pudo guardar la tarea.");
+        Alert.alert("Error", "No se pudo guardar el gesto.");
       }
     } catch (e) { 
       console.error('❌ Error agregando tarea:', e);
-      Alert.alert("Error", "No se pudo guardar la tarea."); 
+      Alert.alert("Error", "No se pudo guardar el gesto."); 
     }
   };
 
@@ -1518,11 +1462,11 @@ export default function VinculosScreen() {
           console.log('📝 Cambio de tarea guardado localmente, se sincronizará cuando haya conexión');
         }
       } else {
-        Alert.alert("Error", "No se pudo actualizar la tarea.");
+        Alert.alert("Error", "No se pudo actualizar el gesto.");
       }
     } catch (e) { 
       console.error('Error actualizando tarea:', e);
-      Alert.alert("Error", "No se pudo actualizar la tarea."); 
+      Alert.alert("Error", "No se pudo actualizar el gesto."); 
     }
   };
 
@@ -1533,8 +1477,8 @@ export default function VinculosScreen() {
     }
     
     Alert.alert(
-      "Eliminar tarea",
-      "¿Estás seguro de eliminar esta tarea?",
+      "Eliminar gesto",
+      "¿Estás seguro de eliminar este gesto?",
       [
         { text: "Cancelar", style: "cancel" },
         {
@@ -1564,11 +1508,11 @@ export default function VinculosScreen() {
                   console.log('📝 Eliminación de tarea guardada localmente, se sincronizará cuando haya conexión');
                 }
               } else {
-                Alert.alert("Error", "No se pudo eliminar la tarea.");
+                Alert.alert("Error", "No se pudo eliminar el gesto.");
               }
             } catch (e) { 
-              console.error('Error eliminando tarea:', e);
-              Alert.alert("Error", "No se pudo eliminar la tarea."); 
+              console.error('Error eliminando gesto:', e);
+              Alert.alert("Error", "No se pudo eliminar el gesto."); 
             }
           }
         }
@@ -1593,7 +1537,7 @@ export default function VinculosScreen() {
     setTareaDesdeTarea(tarea);
     setTextoTarea("");
     setFechaHoraEjecucion(new Date());
-    setClasificacionTarea(tarea.clasificacion || 'Llamar');
+    setClasificacionTarea(tarea.clasificacion || TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
     setModalTareasVisible(true);
   };
 
@@ -2208,27 +2152,10 @@ export default function VinculosScreen() {
 
   const listaAgendaFiltrada = agendaTelefonica.filter(c => c.name.toLowerCase().includes(filtroAgenda.toLowerCase()));
 
-  const formatRecordingTime = (sec) => {
-    const m = Math.floor(sec / 60);
-    const s = sec % 60;
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top']}>
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.container}>
-        {/* Indicador de grabación en pantalla (absolute para quedar por encima del fondo) */}
-        {voiceRecording && (
-          <View style={styles.recordingBarWrapper}>
-            <View style={styles.recordingBar}>
-              <Animated.View style={[styles.recordingDot, { transform: [{ scale: recordingPulseAnim }] }]} />
-              <Text style={styles.recordingText}>Grabando...</Text>
-              <Text style={styles.recordingTime}>{formatRecordingTime(recordingElapsed)}</Text>
-              <Text style={styles.recordingHint}>Toca el micrófono para enviar</Text>
-            </View>
-          </View>
-        )}
         {/* Fondo decorativo con gradiente y círculos animados */}
         <FondoDecorativo />
         
@@ -2490,7 +2417,7 @@ export default function VinculosScreen() {
             <View style={styles.modalInteraccionesContainer}>
               <View style={styles.modalHeaderImportar}>
                 <Text style={styles.modalTitleImportar}>💬 Interacciones - {datosEditados.nombre || 'Contacto'}</Text>
-                <TouchableOpacity onPress={() => setModalInteraccionesVisible(false)} style={styles.modalCloseButton}>
+                <TouchableOpacity onPress={() => { setModalInteraccionesVisible(false); setVoicePreviewContactoFromModal(null); }} style={styles.modalCloseButton}>
                   <Ionicons name="close" size={24} color={COLORES.agua} />
                 </TouchableOpacity>
               </View>
@@ -2503,25 +2430,9 @@ export default function VinculosScreen() {
               <View style={styles.nuevaInteraccionContainer}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                   <Text style={styles.label}>Nueva Interacción</Text>
-                  {/* Botón Premium - Voice Note e IA */}
-                  <TouchableOpacity 
-                    style={styles.premiumButton}
-                    onPress={() => {
-                      Alert.alert(
-                        "Función Premium",
-                        "Esta función estará disponible próximamente. Podrás grabar notas de voz que se convertirán automáticamente en texto usando IA.",
-                        [{ text: "Entendido" }]
-                      );
-                    }}
-                  >
-                    <View style={styles.premiumButtonContent}>
-                      <Ionicons name="mic" size={18} color={COLORES.agua} />
-                      <Ionicons name="star" size={14} color="#FFD700" style={{ marginLeft: 4 }} />
-                      <Text style={styles.premiumButtonText}>Premium</Text>
-                    </View>
-                  </TouchableOpacity>
                 </View>
                 <TextInput 
+                  ref={inputNuevaInteraccionRef}
                   style={styles.inputNuevaInteraccion} 
                   value={textoInteraccion} 
                   onChangeText={setTextoInteraccion} 
@@ -2639,6 +2550,7 @@ export default function VinculosScreen() {
                 </View>
               }
             />
+            {/* Botones + y micrófono: siempre visibles encima de todo vía GlobalVoiceOverlay */}
             </View>
           </SafeAreaView>
         </Modal>
@@ -2719,17 +2631,17 @@ export default function VinculosScreen() {
           </View>
         </Modal>
 
-        {/* Modal de tareas */}
+        {/* Modal de gestos */}
         <Modal animationType="slide" visible={modalTareasVisible} onRequestClose={() => setModalTareasVisible(false)}>
           <SafeAreaView style={styles.modalFull}>
             <View style={styles.modalHeaderImportar}>
-              <Text style={styles.modalTitleImportar}>📌 Tareas - {datosEditados.nombre || 'Contacto'}</Text>
+              <Text style={styles.modalTitleImportar}>📌 Gestos - {datosEditados.nombre || 'Contacto'}</Text>
               <TouchableOpacity onPress={() => setModalTareasVisible(false)} style={styles.modalCloseButton}>
                 <Ionicons name="close" size={24} color={COLORES.agua} />
               </TouchableOpacity>
             </View>
             
-            {/* Formulario para nueva tarea */}
+            {/* Formulario para nuevo gesto */}
             <View style={styles.nuevaInteraccionContainer}>
               <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
                 <Text style={[styles.label, { fontSize: 14 }]}>Nueva Tarea</Text>
@@ -2755,7 +2667,7 @@ export default function VinculosScreen() {
                 style={styles.inputNuevaInteraccion} 
                 value={textoTarea} 
                 onChangeText={setTextoTarea} 
-                placeholder="Notas de la tarea (ej: Preguntar por su perro)..." 
+                placeholder="Notas del gesto (ej: Preguntar por su perro)..." 
                 multiline={true}
               />
               
@@ -2810,7 +2722,7 @@ export default function VinculosScreen() {
               
               <Text style={styles.label}>Clasificación</Text>
               <SelectorChips 
-                opciones={CLASIFICACIONES_TAREAS} 
+                opciones={TIPOS_DE_GESTO_DISPLAY} 
                 seleccionado={clasificacionTarea} 
                 colorActive={COLORES.agua} 
                 onSelect={(v) => setClasificacionTarea(v)} 
@@ -2830,7 +2742,7 @@ export default function VinculosScreen() {
               
               {tareaDesdeTarea && (
                 <Text style={[styles.label, { fontSize: 12, color: COLORES.textoSuave, marginTop: 8 }]}>
-                  Creando tarea desde: {tareaDesdeTarea.descripcion}
+                  Creando gesto desde: {tareaDesdeTarea.descripcion}
                 </Text>
               )}
               
@@ -2840,11 +2752,11 @@ export default function VinculosScreen() {
                 disabled={!textoTarea.trim()}
               >
                 <Ionicons name="add-circle" size={20} color="white" />
-                <Text style={styles.addInteraccionButtonText}>Agregar Tarea</Text>
+                <Text style={styles.addInteraccionButtonText}>Agregar gesto</Text>
               </TouchableOpacity>
             </View>
 
-            {/* Lista de tareas */}
+            {/* Lista de gestos */}
             <FlatList
               data={datosEditados.tareas ? [...datosEditados.tareas].sort((a, b) => {
                 // Primero las no completadas, luego por fecha de ejecución
@@ -2924,7 +2836,7 @@ export default function VinculosScreen() {
               ListEmptyComponent={
                 <View style={styles.emptyInteraccionesState}>
                   <Ionicons name="checkbox-outline" size={48} color={COLORES.textoSuave} />
-                  <Text style={styles.emptyInteraccionesText}>No hay tareas registradas</Text>
+                  <Text style={styles.emptyInteraccionesText}>No hay gestos registrados</Text>
                 </View>
               }
             />
@@ -3376,274 +3288,9 @@ export default function VinculosScreen() {
           }
         />
 
-        {/* Botón flotante - Micrófono (voz → preview → tarea o interacción) */}
-        <TouchableOpacity 
-          style={[styles.floatingButtonPremium, (voiceRecording || sendingVoice) && { opacity: 0.95 }]}
-          onPress={async () => {
-            if (sendingVoice) return;
-            if (voiceRecording) {
-              const { uri, error: stopErr } = await stopRecording(voiceRecording);
-              setVoiceRecording(null);
-              if (stopErr || !uri) {
-                Alert.alert('Grabación', stopErr || 'No se obtuvo el audio.');
-                return;
-              }
-              await new Promise((r) => setTimeout(r, 250));
-              setVoicePreviewAudioUri(uri);
-              setVoicePreviewData(null);
-              setVoicePreviewTempId(null);
-              setSendingVoice(true);
-              console.log('[VinculosScreen] Llamando uploadVoiceTemp con uri:', uri ? uri.substring(0, 60) + '...' : 'null');
-              const upload = await uploadVoiceTemp(uri);
-              console.log('[VinculosScreen] uploadVoiceTemp resultado:', upload.success ? { tempId: upload.tempId } : { error: upload.error, status: upload.status });
-              setSendingVoice(false);
-              if (!upload.success) {
-                Alert.alert('Subir nota', upload.error || 'No se pudo subir la nota.');
-                return;
-              }
-              setVoicePreviewTempId(upload.tempId);
-              setModalVoicePreviewVisible(true);
-              return;
-            }
-            const { recording, error: startErr } = await startRecording();
-            if (startErr) {
-              Alert.alert('Micrófono', startErr);
-              return;
-            }
-            setVoiceRecording(recording);
-          }}
-          activeOpacity={0.8}
-          disabled={sendingVoice}
-        >
-          <View style={styles.floatingButtonPremiumInner}>
-            {sendingVoice ? (
-              <ActivityIndicator size="small" color="white" />
-            ) : (
-              <>
-                <Ionicons name={voiceRecording ? 'stop' : 'mic'} size={24} color="white" />
-                <Ionicons name="star" size={12} color="#FFD700" style={{ position: 'absolute', top: -2, right: -2 }} />
-              </>
-            )}
-          </View>
-        </TouchableOpacity>
+        {/* Preview de nota de voz: siempre en GlobalVoiceOverlay (App.js) */}
 
-        {/* Modal Preview nota de voz: elegir guardar como tarea o interacción */}
-        <Modal
-          visible={modalVoicePreviewVisible}
-          animationType="slide"
-          transparent
-          onRequestClose={() => setModalVoicePreviewVisible(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalVoicePreviewContent}>
-              <View style={styles.modalVoicePreviewHeader}>
-                <Text style={styles.modalVoicePreviewTitle}>{voicePreviewData ? 'Preview de la nota' : 'Nota grabada'}</Text>
-                <TouchableOpacity onPress={async () => {
-                  if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                  setModalVoicePreviewVisible(false);
-                  setVoicePreviewData(null);
-                  setVoicePreviewAudioUri(null);
-                  setVoicePreviewTempId(null);
-                  setVoicePreviewTranscription(null);
-                  setVoiceTranscribing(false);
-                }}>
-                  <Ionicons name="close" size={24} color={COLORES.texto} />
-                </TouchableOpacity>
-              </View>
-              <ScrollView style={styles.modalVoicePreviewBody} showsVerticalScrollIndicator={false}>
-                {voicePreviewAudioUri && (
-                  <>
-                    <Text style={styles.modalVoicePreviewText}>Grabación lista. Toca Reproducir para escuchar.</Text>
-                    <TouchableOpacity
-                      style={styles.modalVoicePreviewPlayButton}
-                      onPress={async () => {
-                        const r = await playPreviewUri(voicePreviewAudioUri);
-                        if (r.error) Alert.alert('Audio', r.error);
-                      }}
-                    >
-                      <Ionicons name="play" size={24} color="white" />
-                      <Text style={styles.modalVoicePreviewPlayButtonText}>Reproducir nota</Text>
-                    </TouchableOpacity>
-                    {voiceTranscribing && (
-                      <Text style={[styles.modalVoicePreviewText, { marginTop: 12, fontStyle: 'italic' }]}>Transcribiendo...</Text>
-                    )}
-                    {!voiceTranscribing && voicePreviewTranscription !== null && (
-                      <>
-                        <Text style={styles.modalVoicePreviewLabel}>Transcripción:</Text>
-                        <Text style={styles.modalVoicePreviewText}>{voicePreviewTranscription || '—'}</Text>
-                      </>
-                    )}
-                  </>
-                )}
-                {voicePreviewData && (
-                  <>
-                    <Text style={styles.modalVoicePreviewLabel}>Dijiste:</Text>
-                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.texto || '—'}</Text>
-                    <Text style={styles.modalVoicePreviewLabel}>Contacto:</Text>
-                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}</Text>
-                    <Text style={styles.modalVoicePreviewLabel}>Clasificación:</Text>
-                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.clasificacion || 'Otro'}</Text>
-                    <Text style={styles.modalVoicePreviewLabel}>Tarea extraída:</Text>
-                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.tarea || '—'}</Text>
-                    <Text style={styles.modalVoicePreviewLabel}>Fecha:</Text>
-                    <Text style={styles.modalVoicePreviewText}>{voicePreviewData.fecha || '—'}</Text>
-                  </>
-                )}
-              </ScrollView>
-              <View style={styles.modalVoicePreviewActions}>
-                {voicePreviewData && (
-                <>
-                <TouchableOpacity
-                  style={[
-                    styles.modalVoicePreviewButton,
-                    styles.modalVoicePreviewButtonTask,
-                    (voicePreviewData.tipo === 'tarea') && styles.modalVoicePreviewButtonSuggested,
-                  ]}
-                  onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
-                      return;
-                    }
-                    const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
-                    if (!contact) {
-                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
-                      return;
-                    }
-                    try {
-                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
-                      if (!textoTranscripcion) {
-                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
-                        return;
-                      }
-                      const fechaEjecucion = new Date(voicePreviewData.fecha);
-                      const clasificacion = CLASIFICACIONES_TAREAS.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
-                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
-                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                      cargarVinculos();
-                      setModalVoicePreviewVisible(false);
-                      setVoicePreviewData(null);
-                      setVoicePreviewAudioUri(null);
-                      setVoicePreviewTempId(null);
-                      setVoicePreviewTranscription(null);
-                      setVoiceTranscribing(false);
-                      Alert.alert('Listo', 'Tarea guardada (nota de voz).');
-                    } catch (e) {
-                      Alert.alert('Error', e.message || 'No se pudo guardar.');
-                    }
-                  }}
-                >
-                  <Ionicons name="checkmark-done-outline" size={22} color="white" />
-                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como tarea</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
-                  onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
-                      return;
-                    }
-                    const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
-                    if (!contact) {
-                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
-                      return;
-                    }
-                    try {
-                      const textoTranscripcion = (voicePreviewData.texto || voicePreviewTranscription || '').trim();
-                      if (!textoTranscripcion) {
-                        Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
-                        return;
-                      }
-                      const { contacto } = await saveInteractionFromVoice(voicePreviewData.contactoId, voicePreviewTempId, textoTranscripcion);
-                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                      cargarVinculos();
-                      setModalVoicePreviewVisible(false);
-                      setVoicePreviewData(null);
-                      setVoicePreviewAudioUri(null);
-                      setVoicePreviewTempId(null);
-                      setVoicePreviewTranscription(null);
-                      setVoiceTranscribing(false);
-                      Alert.alert(
-                        'Interacción guardada',
-                        'Se guardó como texto. Toca "Ver interacciones" para verla.',
-                        [
-                          { text: 'Ver interacciones', onPress: () => { setDatosEditados(contacto || {}); setModalInteraccionesVisible(true); } },
-                          { text: 'Cerrar', style: 'cancel' }
-                        ]
-                      );
-                    } catch (e) {
-                      Alert.alert('Error', e.message || 'No se pudo guardar.');
-                    }
-                  }}
-                >
-                  <Ionicons name="chatbubble-outline" size={22} color="white" />
-                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como interacción</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.modalVoicePreviewCancel}
-                  onPress={async () => {
-                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                    setModalVoicePreviewVisible(false);
-                    setVoicePreviewData(null);
-                    setVoicePreviewAudioUri(null);
-                    setVoicePreviewTempId(null);
-                    setVoicePreviewTranscription(null);
-                    setVoiceTranscribing(false);
-                  }}
-                >
-                  <Text style={styles.modalVoicePreviewCancelText}>Cancelar</Text>
-                </TouchableOpacity>
-              </>
-                )}
-                {!voicePreviewData && voicePreviewAudioUri && (
-                <TouchableOpacity
-                  style={styles.modalVoicePreviewCancel}
-                  onPress={async () => {
-                    if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                    setModalVoicePreviewVisible(false);
-                    setVoicePreviewData(null);
-                    setVoicePreviewAudioUri(null);
-                    setVoicePreviewTempId(null);
-                    setVoicePreviewTranscription(null);
-                    setVoiceTranscribing(false);
-                  }}
-                >
-                  <Text style={styles.modalVoicePreviewCancelText}>Cerrar</Text>
-                </TouchableOpacity>
-                )}
-              </View>
-            </View>
-          </View>
-        </Modal>
-
-        {/* Botón flotante Regar - Agregar interacción (elegir contacto → formulario) */}
-        <TouchableOpacity
-          style={styles.floatingButtonRegar}
-          onPress={abrirModalRegar}
-          activeOpacity={0.8}
-          accessibilityLabel="Regar contacto - Agregar interacción"
-        >
-          <View style={styles.floatingButtonRegarInner}>
-            <Ionicons name="water" size={26} color="white" />
-          </View>
-        </TouchableOpacity>
-
-        {/* Botón flotante para modo swipe */}
-        <Animated.View
-          style={[
-            styles.floatingButton,
-            {
-              transform: [{ scale: pulseAnimation }],
-            }
-          ]}
-        >
-          <TouchableOpacity 
-            style={styles.floatingButtonInner}
-            onPress={activarModoJuego}
-            activeOpacity={0.8}
-          >
-            <Ionicons name="swap-horizontal" size={24} color="white" />
-          </TouchableOpacity>
-        </Animated.View>
+        {/* Botones + y Regar: ver GlobalVoiceOverlay (siempre encima en toda la app) */}
 
         {/* Modal de foto a pantalla completa */}
         <Modal
@@ -4490,6 +4137,47 @@ const styles = StyleSheet.create({
     maxWidth: SCREEN_WIDTH * 0.95,
     flex: 1,
     backgroundColor: COLORES.fondoSecundario,
+  },
+  modalInteraccionesFloatingWrap: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 999,
+    elevation: 999,
+  },
+  modalInteraccionesFloatingAdd: {
+    position: 'absolute',
+    bottom: 96,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 10,
+    zIndex: 1000,
+  },
+  modalInteraccionesFloatingMic: {
+    position: 'absolute',
+    bottom: 168,
+    right: 20,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 10,
+    zIndex: 1000,
   },
   modalHeaderImportar: {
     flexDirection: 'row',

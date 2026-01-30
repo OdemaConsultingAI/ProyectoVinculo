@@ -15,7 +15,7 @@ import {
   ScrollView,
   Animated
 } from 'react-native';
-import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -23,15 +23,17 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
+import { TIPOS_DE_GESTO_DISPLAY } from '../constants/tiposDeGesto';
 import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
-const CLASIFICACIONES = ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'];
-const FILTROS_TIPO = ['Todas', ...CLASIFICACIONES];
+const FILTROS_TIPO = ['Todas', ...TIPOS_DE_GESTO_DISPLAY];
 
-export default function TareasScreen() {
+export default function GestosScreen() {
+  const route = useRoute();
+  const navigation = useNavigation();
   const [contactos, setContactos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -51,12 +53,12 @@ export default function TareasScreen() {
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [datePickerMode, setDatePickerMode] = useState('date');
 
-  // Crear tarea desde pantalla Tareas: paso 1 = elegir contacto, paso 2 = formulario
+  // Crear gesto desde pantalla Gestos: paso 1 = elegir contacto, paso 2 = formulario
   const [modalCrearTareaVisible, setModalCrearTareaVisible] = useState(false);
   const [pasoCrearTarea, setPasoCrearTarea] = useState('contacto'); // 'contacto' | 'formulario'
   const [contactoSeleccionadoParaTarea, setContactoSeleccionadoParaTarea] = useState(null);
   const [newTaskDescripcion, setNewTaskDescripcion] = useState('');
-  const [newTaskClasificacion, setNewTaskClasificacion] = useState('Llamar');
+  const [newTaskClasificacion, setNewTaskClasificacion] = useState(TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
   const [newTaskFechaEjecucion, setNewTaskFechaEjecucion] = useState(new Date());
   const [newTaskRecurrenteAnual, setNewTaskRecurrenteAnual] = useState(false);
   const [showDatePickerCrear, setShowDatePickerCrear] = useState(false);
@@ -78,12 +80,12 @@ export default function TareasScreen() {
   // Transcribir nota temporal con Whisper cuando se abre el modal con tempId
   useEffect(() => {
     if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
-    console.log('[TareasScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
+    console.log('[GestosScreen] Iniciando transcripción para tempId:', voicePreviewTempId);
     setVoiceTranscribing(true);
     setVoicePreviewTranscription(null);
     transcribeVoiceTemp(voicePreviewTempId).then((result) => {
       setVoiceTranscribing(false);
-      console.log('[TareasScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length, tipo: result.tipo } : { error: result.error });
+      console.log('[GestosScreen] transcribeVoiceTemp resultado:', result.success ? { textoLength: (result.texto || '').length, tipo: result.tipo } : { error: result.error });
       if (result.success) {
         setVoicePreviewTranscription(result.texto || '');
         setVoicePreviewData({
@@ -93,7 +95,7 @@ export default function TareasScreen() {
           tarea: result.tarea || '',
           descripcion: result.descripcion || result.tarea || '',
           fecha: result.fecha || new Date().toISOString().slice(0, 10),
-          clasificacion: CLASIFICACIONES.includes(result.clasificacion) ? result.clasificacion : 'Otro',
+          clasificacion: TIPOS_DE_GESTO_DISPLAY.includes(result.clasificacion) ? result.clasificacion : 'Otro',
           contactoId: result.contactoId || null,
           contactoNombre: result.contactoNombre || result.vinculo || 'Sin asignar',
         });
@@ -101,7 +103,7 @@ export default function TareasScreen() {
         setVoicePreviewTranscription(result.error || 'Error al transcribir');
       }
     }).catch((err) => {
-      console.log('[TareasScreen] transcribeVoiceTemp excepción:', err?.message);
+      console.log('[GestosScreen] transcribeVoiceTemp excepción:', err?.message);
       setVoiceTranscribing(false);
       setVoicePreviewTranscription('Error al transcribir');
     });
@@ -319,7 +321,7 @@ export default function TareasScreen() {
         if (result.offline) console.log('📝 Cambio guardado localmente');
       }
     } catch (error) {
-      console.error('Error actualizando tarea:', error);
+      console.error('Error actualizando gesto:', error);
     }
   };
 
@@ -374,11 +376,21 @@ export default function TareasScreen() {
     setPasoCrearTarea('contacto');
     setContactoSeleccionadoParaTarea(null);
     setNewTaskDescripcion('');
-    setNewTaskClasificacion('Llamar');
+    setNewTaskClasificacion(TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
     setNewTaskFechaEjecucion(new Date());
     setNewTaskRecurrenteAnual(false);
     setModalCrearTareaVisible(true);
   };
+
+  // Abrir modal "Crear gesto" cuando se navega con openCrearGesto (ej. desde el botón + del overlay)
+  useFocusEffect(
+    useCallback(() => {
+      if (route.params?.openCrearGesto) {
+        navigation.setParams({ openCrearGesto: undefined });
+        abrirModalCrearTarea();
+      }
+    }, [route.params?.openCrearGesto, navigation])
+  );
 
   const cerrarModalCrearTarea = () => {
     setModalCrearTareaVisible(false);
@@ -399,7 +411,7 @@ export default function TareasScreen() {
   const guardarNuevaTarea = async () => {
     if (!contactoSeleccionadoParaTarea?._id) return;
     if (!newTaskDescripcion.trim()) {
-      Alert.alert('Atención', 'Describe la tarea.');
+      Alert.alert('Atención', 'Describe el gesto.');
       return;
     }
     if (!newTaskFechaEjecucion) {
@@ -425,11 +437,11 @@ export default function TareasScreen() {
         setContactos(prev => prev.map(c => c._id === contactoSeleccionadoParaTarea._id ? result.contacto : c));
         cerrarModalCrearTarea();
       } else {
-        Alert.alert('Error', 'No se pudo guardar la tarea.');
+        Alert.alert('Error', 'No se pudo guardar el gesto.');
       }
     } catch (e) {
-      console.error('Error guardando nueva tarea:', e);
-      Alert.alert('Error', 'No se pudo guardar la tarea.');
+      console.error('Error guardando nuevo gesto:', e);
+      Alert.alert('Error', 'No se pudo guardar el gesto.');
     }
   };
 
@@ -520,7 +532,7 @@ export default function TareasScreen() {
               <View style={styles.tareaHeader}>
                 <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                   <Text style={styles.tareaTitulo} numberOfLines={1}>
-                    {item.clasificacion || 'Tarea'}
+                    {item.clasificacion || 'Gesto'}
                   </Text>
                   {item.esRecurrente && (
                     <View style={styles.recurrenteBadge}>
@@ -586,20 +598,12 @@ export default function TareasScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* Indicador de grabación en pantalla */}
-      {voiceRecording && (
-        <View style={styles.recordingBar}>
-          <Animated.View style={[styles.recordingDot, { transform: [{ scale: recordingPulseAnim }] }]} />
-          <Text style={styles.recordingText}>Grabando...</Text>
-          <Text style={styles.recordingTime}>{formatRecordingTime(recordingElapsed)}</Text>
-          <Text style={styles.recordingHint}>Toca el micrófono para enviar</Text>
-        </View>
-      )}
+      {/* Franja roja grabando: siempre encima en toda la app vía GlobalVoiceOverlay */}
 
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <Text style={styles.headerTitle}>Tareas</Text>
+            <Text style={styles.headerTitle}>Gestos</Text>
             {!isOnline && (
               <Ionicons name="cloud-offline-outline" size={18} color={COLORES.urgente} />
             )}
@@ -611,7 +615,7 @@ export default function TareasScreen() {
           <NotificationBell />
         </View>
         <Text style={styles.headerSubtitle}>
-          {tareasFiltradas.length} {tareasFiltradas.length === 1 ? 'tarea' : 'tareas'}
+          {tareasFiltradas.length} {tareasFiltradas.length === 1 ? 'gesto' : 'gestos'}
         </Text>
       </View>
 
@@ -687,7 +691,7 @@ export default function TareasScreen() {
         <View style={styles.dropdownOverlay}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDropdownTipoVisible(false)} />
           <View style={styles.dropdownContent}>
-            <Text style={styles.dropdownTitle}>Tipo de tarea</Text>
+            <Text style={styles.dropdownTitle}>Tipo de gesto</Text>
             <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
               {FILTROS_TIPO.map((opcion) => (
                 <TouchableOpacity
@@ -707,7 +711,7 @@ export default function TareasScreen() {
         </View>
       </Modal>
 
-      {/* Lista de tareas */}
+      {/* Lista de gestos */}
       <FlatList
         data={tareasFiltradas}
         keyExtractor={(item, index) => `${item.contactoId}-${item.fechaHoraCreacion}-${index}`}
@@ -715,15 +719,15 @@ export default function TareasScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="checkmark-done-circle-outline" size={64} color={COLORES.textoSuave} />
+            <Ionicons name="heart-outline" size={64} color={COLORES.textoSuave} />
             <Text style={styles.emptyText}>
               {filtroActivo === 'Hoy' 
-                ? 'No hay tareas para hoy' 
+                ? 'No hay gestos para hoy' 
                 : filtroActivo === 'Semana'
-                ? 'No hay tareas esta semana'
+                ? 'No hay gestos esta semana'
                 : filtroActivo === 'Mes'
-                ? 'No hay tareas este mes'
-                : 'No hay tareas'}
+                ? 'No hay gestos este mes'
+                : 'No hay gestos'}
             </Text>
           </View>
         }
@@ -739,58 +743,9 @@ export default function TareasScreen() {
         }
       />
 
-      {/* Botón flotante - Micrófono (voz → preview → tarea o interacción) */}
-      <TouchableOpacity
-        style={[styles.floatingButtonPremium, (voiceRecording || sendingVoice) && styles.floatingButtonPremiumActive]}
-        onPress={async () => {
-          if (sendingVoice) return;
-          if (voiceRecording) {
-            const { uri, error: stopErr } = await stopRecording(voiceRecording);
-            setVoiceRecording(null);
-            if (stopErr || !uri) {
-              Alert.alert('Grabación', stopErr || 'No se obtuvo el audio.');
-              return;
-            }
-            await new Promise((r) => setTimeout(r, 250));
-            setVoicePreviewAudioUri(uri);
-            setVoicePreviewData(null);
-            setVoicePreviewTempId(null);
-            setSendingVoice(true);
-            console.log('[TareasScreen] Llamando uploadVoiceTemp con uri:', uri ? uri.substring(0, 60) + '...' : 'null');
-            const upload = await uploadVoiceTemp(uri);
-            console.log('[TareasScreen] uploadVoiceTemp resultado:', upload.success ? { tempId: upload.tempId } : { error: upload.error, status: upload.status });
-            setSendingVoice(false);
-            if (!upload.success) {
-              Alert.alert('Subir nota', upload.error || 'No se pudo subir la nota.');
-              return;
-            }
-            setVoicePreviewTempId(upload.tempId);
-            setModalVoicePreviewVisible(true);
-            return;
-          }
-          const { recording, error: startErr } = await startRecording();
-          if (startErr) {
-            Alert.alert('Micrófono', startErr);
-            return;
-          }
-          setVoiceRecording(recording);
-        }}
-        activeOpacity={0.8}
-        disabled={sendingVoice}
-      >
-        <View style={styles.floatingButtonPremiumInner}>
-          {sendingVoice ? (
-            <ActivityIndicator size="small" color="white" />
-          ) : (
-            <>
-              <Ionicons name={voiceRecording ? 'stop' : 'mic'} size={24} color="white" />
-              <Ionicons name="star" size={12} color="#FFD700" style={{ position: 'absolute', top: -2, right: -2 }} />
-            </>
-          )}
-        </View>
-      </TouchableOpacity>
+      {/* Micrófono: siempre visible encima de todo vía GlobalVoiceOverlay (App.js) */}
 
-      {/* Modal Preview nota de voz: elegir guardar como tarea o interacción */}
+      {/* Modal Preview nota de voz: elegir guardar como gesto o interacción */}
       <Modal
         visible={modalVoicePreviewVisible}
         animationType="slide"
@@ -844,7 +799,7 @@ export default function TareasScreen() {
                   <Text style={styles.modalVoicePreviewText}>{voicePreviewData.texto || '—'}</Text>
                   <Text style={styles.modalVoicePreviewLabel}>Contacto:</Text>
                   <Text style={styles.modalVoicePreviewText}>{voicePreviewData.contactoNombre || voicePreviewData.vinculo || 'Sin asignar'}</Text>
-                  <Text style={styles.modalVoicePreviewLabel}>Tarea extraída:</Text>
+                  <Text style={styles.modalVoicePreviewLabel}>Gesto extraído:</Text>
                   <Text style={styles.modalVoicePreviewText}>{voicePreviewData.tarea || '—'}</Text>
                   <Text style={styles.modalVoicePreviewLabel}>Fecha:</Text>
                   <Text style={styles.modalVoicePreviewText}>{voicePreviewData.fecha || '—'}</Text>
@@ -877,7 +832,7 @@ export default function TareasScreen() {
                         return;
                       }
                       const fechaEjecucion = new Date(voicePreviewData.fecha);
-                      const clasificacion = CLASIFICACIONES.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
+                      const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
                       await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion, clasificacion, textoTranscripcion);
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       cargarTareas();
@@ -887,14 +842,14 @@ export default function TareasScreen() {
                       setVoicePreviewTempId(null);
                       setVoicePreviewTranscription(null);
                       setVoiceTranscribing(false);
-                      Alert.alert('Listo', 'Tarea guardada (nota de voz).');
+                      Alert.alert('Listo', 'Gesto guardado (nota de voz).');
                     } catch (e) {
                       Alert.alert('Error', e.message || 'No se pudo guardar.');
                     }
                   }}
               >
                 <Ionicons name="checkmark-done-outline" size={22} color="white" />
-                <Text style={styles.modalVoicePreviewButtonText}>Guardar como tarea</Text>
+                <Text style={styles.modalVoicePreviewButtonText}>Guardar como gesto</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
@@ -960,12 +915,12 @@ export default function TareasScreen() {
         </View>
       </Modal>
 
-      {/* Botón flotante Nueva tarea (+) debajo del micrófono */}
+      {/* Botón flotante Nuevo gesto (+) debajo del micrófono */}
       <TouchableOpacity
         style={styles.floatingButtonNuevaTarea}
         onPress={abrirModalCrearTarea}
         activeOpacity={0.8}
-        accessibilityLabel="Crear nueva tarea"
+        accessibilityLabel="Crear nuevo gesto"
       >
         <View style={styles.floatingButtonNuevaTareaInner}>
           <Ionicons name="add" size={28} color="white" />
@@ -977,7 +932,7 @@ export default function TareasScreen() {
         style={styles.floatingButtonHistorial}
         onPress={() => setModalHistorialVisible(true)}
         activeOpacity={0.8}
-        accessibilityLabel="Ver historial de tareas"
+        accessibilityLabel="Ver historial de gestos"
       >
         <View style={styles.floatingButtonHistorialInner}>
           <Ionicons name="time-outline" size={24} color="white" />
@@ -994,7 +949,7 @@ export default function TareasScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalHistorialContent}>
             <View style={styles.modalHistorialHeader}>
-              <Text style={styles.modalHistorialTitle}>Historial de tareas</Text>
+              <Text style={styles.modalHistorialTitle}>Historial de gestos</Text>
               <TouchableOpacity onPress={() => setModalHistorialVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
               </TouchableOpacity>
@@ -1005,7 +960,7 @@ export default function TareasScreen() {
               renderItem={({ item }) => (
                 <View style={styles.historialItem}>
                   <View style={styles.historialItemContent}>
-                    <Text style={styles.historialItemTitulo}>{item.clasificacion || 'Tarea'}</Text>
+                    <Text style={styles.historialItemTitulo}>{item.clasificacion || 'Gesto'}</Text>
                     <Text style={styles.historialItemDesc} numberOfLines={1}>{item.audioBase64 ? '[Nota de voz]' : item.descripcion}</Text>
                     <Text style={styles.historialItemMeta}>
                       {item.contactoNombre} · {item.fechaCompletado.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
@@ -1027,7 +982,7 @@ export default function TareasScreen() {
         </View>
       </Modal>
 
-      {/* Modal Editar Tarea */}
+      {/* Modal Editar Gesto */}
       <Modal
         visible={modalEditarVisible}
         animationType="slide"
@@ -1037,7 +992,7 @@ export default function TareasScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalEditarContent}>
             <View style={styles.modalEditarHeader}>
-              <Text style={styles.modalEditarTitle}>Editar tarea</Text>
+              <Text style={styles.modalEditarTitle}>Editar gesto</Text>
               <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
               </TouchableOpacity>
@@ -1045,7 +1000,7 @@ export default function TareasScreen() {
             <ScrollView style={styles.modalEditarBody}>
               <Text style={styles.modalLabel}>Tipo</Text>
               <View style={styles.clasificacionRow}>
-                {CLASIFICACIONES.map((c) => (
+                {TIPOS_DE_GESTO_DISPLAY.map((c) => (
                   <TouchableOpacity
                     key={c}
                     style={[styles.clasificacionChip, editClasificacion === c && styles.clasificacionChipActive]}
@@ -1060,7 +1015,7 @@ export default function TareasScreen() {
                 style={styles.modalInput}
                 value={editDescripcion}
                 onChangeText={setEditDescripcion}
-                placeholder="Notas de la tarea"
+                placeholder="Notas del gesto"
                 placeholderTextColor={COLORES.textoSuave}
                 multiline
               />
@@ -1102,7 +1057,7 @@ export default function TareasScreen() {
         </View>
       </Modal>
 
-      {/* Modal Crear Tarea: paso 1 elegir contacto, paso 2 formulario */}
+      {/* Modal Crear Gesto: paso 1 elegir contacto, paso 2 formulario */}
       <Modal
         visible={modalCrearTareaVisible}
         animationType="slide"
@@ -1118,7 +1073,7 @@ export default function TareasScreen() {
                   <Text style={styles.modalCrearTareaBackText}>Contactos</Text>
                 </TouchableOpacity>
               ) : (
-                <Text style={styles.modalCrearTareaTitle}>¿Para quién es la tarea?</Text>
+                <Text style={styles.modalCrearTareaTitle}>¿Para quién es el gesto?</Text>
               )}
               <TouchableOpacity onPress={cerrarModalCrearTarea}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
@@ -1182,7 +1137,7 @@ export default function TareasScreen() {
                 <ScrollView style={styles.modalCrearTareaForm} showsVerticalScrollIndicator={false}>
                   <Text style={styles.modalLabel}>Tipo</Text>
                   <View style={styles.clasificacionRow}>
-                    {CLASIFICACIONES.map((c) => (
+                    {TIPOS_DE_GESTO_DISPLAY.map((c) => (
                       <TouchableOpacity
                         key={c}
                         style={[styles.clasificacionChip, newTaskClasificacion === c && styles.clasificacionChipActive]}
@@ -1248,7 +1203,7 @@ export default function TareasScreen() {
                     <Text style={styles.modalCancelText}>Cambiar contacto</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.modalSaveButton} onPress={guardarNuevaTarea}>
-                    <Text style={styles.modalSaveText}>Guardar tarea</Text>
+                    <Text style={styles.modalSaveText}>Guardar gesto</Text>
                   </TouchableOpacity>
                 </View>
               </>

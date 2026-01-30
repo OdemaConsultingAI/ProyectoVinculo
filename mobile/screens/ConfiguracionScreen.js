@@ -15,6 +15,9 @@ export default function ConfiguracionScreen({ onLogout }) {
   const [confirmarPassword, setConfirmarPassword] = useState('');
   const [cambiandoPassword, setCambiandoPassword] = useState(false);
   const [actualizandoPlan, setActualizandoPlan] = useState(false);
+  const [menuHamburguesaVisible, setMenuHamburguesaVisible] = useState(false);
+
+  const VERSION_APP = '1.0';
 
   useEffect(() => {
     cargarUsuario();
@@ -133,11 +136,19 @@ export default function ConfiguracionScreen({ onLogout }) {
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <View style={styles.header}>
-          <View style={styles.headerLeft}>
+          <TouchableOpacity
+            style={styles.headerLeft}
+            onPress={() => setMenuHamburguesaVisible(true)}
+          >
+            <Ionicons name="menu" size={28} color={COLORES.texto} />
+          </TouchableOpacity>
+          <View style={styles.headerCenter}>
             <Ionicons name="settings" size={48} color={COLORES.agua} />
             <Text style={styles.title}>Configuración</Text>
           </View>
-          <NotificationBell />
+          <View style={styles.headerRight}>
+            <NotificationBell />
+          </View>
         </View>
         
         {usuario && (
@@ -150,6 +161,23 @@ export default function ConfiguracionScreen({ onLogout }) {
               <Ionicons name="person-circle" size={40} color={COLORES.agua} />
               <Text style={styles.userName}>{usuario.nombre}</Text>
               <Text style={styles.userEmail}>{usuario.email}</Text>
+              
+              {/* Uso de IA: día, mes y coste en dólares */}
+              <View style={styles.usageSection}>
+                <Text style={styles.usageSectionTitle}>Uso de IA (notas de voz)</Text>
+                <View style={styles.usageRow}>
+                  <Text style={styles.usageLabel}>Hoy:</Text>
+                  <Text style={styles.usageValue}>{usuario.aiPeticionesHoy ?? 0} interacciones</Text>
+                </View>
+                <View style={styles.usageRow}>
+                  <Text style={styles.usageLabel}>Mes actual:</Text>
+                  <Text style={styles.usageValue}>{Math.max(usuario.aiPeticionesMes ?? 0, usuario.aiPeticionesHoy ?? 0)} interacciones</Text>
+                </View>
+                <View style={styles.usageRow}>
+                  <Text style={styles.usageLabel}>Coste estimado (total):</Text>
+                  <Text style={styles.usageValue}>${((usuario.aiEstimatedCostUsd ?? 0)).toFixed(4)} USD</Text>
+                </View>
+              </View>
               
               {/* Plan del usuario */}
               <View style={styles.planContainer}>
@@ -172,16 +200,7 @@ export default function ConfiguracionScreen({ onLogout }) {
               </View>
             </View>
 
-            {/* Botón para cambiar contraseña */}
-            <TouchableOpacity 
-              style={styles.actionButton} 
-              onPress={() => setModalCambiarPassword(true)}
-            >
-              <Ionicons name="lock-closed-outline" size={20} color={COLORES.texto} />
-              <Text style={styles.actionButtonText}>Cambiar Contraseña</Text>
-            </TouchableOpacity>
-
-            {/* Botón para actualizar a Premium */}
+            {/* Primero: Actualizar a Premium */}
             {usuario.plan !== 'Premium' && (
               <TouchableOpacity 
                 style={styles.premiumButton} 
@@ -199,14 +218,63 @@ export default function ConfiguracionScreen({ onLogout }) {
               </TouchableOpacity>
             )}
 
-            {/* Botón de cerrar sesión */}
-            <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-              <Ionicons name="log-out-outline" size={20} color="white" />
-              <Text style={styles.logoutText}>Cerrar Sesión</Text>
+            {/* Segundo: Compartir */}
+            <TouchableOpacity 
+              style={styles.recomendarButton} 
+              onPress={() => {}}
+            >
+              <Ionicons name="share-social-outline" size={20} color={COLORES.texto} />
+              <Text style={styles.actionButtonText}>Compartir</Text>
             </TouchableOpacity>
+
+            {/* Versión de la app */}
+            <Text style={styles.versionText}>Versión {VERSION_APP}</Text>
           </ScrollView>
         )}
       </View>
+
+      {/* Menú hamburguesa: Cambiar contraseña y Cerrar sesión */}
+      <Modal
+        visible={menuHamburguesaVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setMenuHamburguesaVisible(false)}
+      >
+        <TouchableOpacity
+          style={styles.menuOverlay}
+          activeOpacity={1}
+          onPress={() => setMenuHamburguesaVisible(false)}
+        >
+          <TouchableOpacity style={styles.menuPanel} activeOpacity={1} onPress={() => {}}>
+            <View style={styles.menuHeader}>
+              <Text style={styles.menuTitle}>Menú</Text>
+              <TouchableOpacity onPress={() => setMenuHamburguesaVisible(false)}>
+                <Ionicons name="close" size={24} color={COLORES.texto} />
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuHamburguesaVisible(false);
+                setModalCambiarPassword(true);
+              }}
+            >
+              <Ionicons name="lock-closed-outline" size={22} color={COLORES.texto} />
+              <Text style={styles.menuItemText}>Cambiar contraseña</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.menuItem, styles.menuItemLogout]}
+              onPress={() => {
+                setMenuHamburguesaVisible(false);
+                handleLogout();
+              }}
+            >
+              <Ionicons name="log-out-outline" size={22} color={COLORES.urgente} />
+              <Text style={styles.menuItemTextLogout}>Cerrar sesión</Text>
+            </TouchableOpacity>
+          </TouchableOpacity>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Modal para cambiar contraseña */}
       <Modal
@@ -298,17 +366,86 @@ const styles = StyleSheet.create({
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginTop: 8,
     marginBottom: 16,
+    position: 'relative',
   },
   headerLeft: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    padding: 8,
+    zIndex: 10,
+  },
+  headerCenter: {
     alignItems: 'center',
+    justifyContent: 'center',
   },
   headerRight: {
+    position: 'absolute',
+    right: 0,
+    top: 0,
     flexDirection: 'row',
     alignItems: 'center',
+  },
+  menuOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.4)',
+    justifyContent: 'flex-start',
+    paddingTop: 60,
+    paddingLeft: 0,
+  },
+  menuPanel: {
+    backgroundColor: 'white',
+    borderTopRightRadius: 16,
+    borderBottomRightRadius: 16,
+    width: 280,
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 0 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 8,
+    overflow: 'hidden',
+  },
+  menuHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: COLORES.fondoSecundario,
+  },
+  menuTitle: {
+    fontSize: 18,
+    fontWeight: '700',
+    color: COLORES.texto,
+  },
+  menuItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
     gap: 12,
+  },
+  menuItemText: {
+    fontSize: 16,
+    fontWeight: '500',
+    color: COLORES.texto,
+  },
+  menuItemLogout: {},
+  menuItemTextLogout: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORES.urgente,
+  },
+  versionText: {
+    fontSize: 12,
+    color: COLORES.textoSecundario,
+    marginTop: 24,
+    marginBottom: 8,
+    alignSelf: 'center',
   },
   title: { 
     fontSize: 24, 
@@ -316,12 +453,52 @@ const styles = StyleSheet.create({
     color: COLORES.texto, 
     marginTop: 8,
   },
+  usageSection: {
+    marginTop: 16,
+    paddingTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: COLORES.fondoSecundario,
+    width: '100%',
+  },
+  usageSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORES.textoSecundario,
+    marginBottom: 10,
+  },
+  usageRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  usageLabel: {
+    fontSize: 14,
+    color: COLORES.texto,
+  },
+  usageValue: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORES.texto,
+  },
+  recomendarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORES.fondoSecundario,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    width: '100%',
+    gap: 12,
+  },
   scrollView: {
     flex: 1,
   },
   scrollContent: {
     flexGrow: 1,
-    paddingBottom: 20,
+    paddingBottom: 32,
   },
   userInfo: {
     alignItems: 'center',

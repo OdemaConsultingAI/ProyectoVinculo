@@ -175,7 +175,7 @@ export default function NotificacionesScreen({ navigation }) {
       const notifs = [];
       const hoy = new Date();
       
-      // 1. Tareas pendientes (ahora son un array separado)
+      // 1. Gestos pendientes (array por contacto)
       contactos.forEach(contacto => {
         if (contacto.tareas && contacto.tareas.length > 0) {
           contacto.tareas.forEach(tarea => {
@@ -186,13 +186,13 @@ export default function NotificacionesScreen({ navigation }) {
               fechaEjecucion.setHours(0, 0, 0, 0);
               const diasRestantes = Math.floor((fechaEjecucion - hoy) / (1000 * 60 * 60 * 24));
               
-              // Solo mostrar tareas que no estén vencidas por más de 7 días o futuras
+              // Solo mostrar gestos que no estén vencidos por más de 7 días o futuros
               if (diasRestantes >= -7) {
                 notifs.push({
                   id: `tarea-${contacto._id}-${tarea.fechaHoraCreacion}`,
                   tipo: 'tarea',
                   prioridad: diasRestantes <= 0 ? 'urgente' : diasRestantes <= 3 ? 'alta' : 'media',
-                  titulo: `📋 ${tarea.clasificacion || 'Tarea'}`,
+                  titulo: `📋 ${tarea.clasificacion || 'Gesto'}`,
                   descripcion: tarea.descripcion,
                   contacto: contacto.nombre,
                   contactoId: contacto._id,

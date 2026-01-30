@@ -1,16 +1,19 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 import VinculosScreen from './screens/VinculosScreen';
-import TareasScreen from './screens/TareasScreen';
+import GestosScreen from './screens/GestosScreen';
 import ConfiguracionScreen from './screens/ConfiguracionScreen';
 import LoginScreen from './screens/LoginScreen';
 import SplashScreen from './screens/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
+import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import { isAuthenticated } from './services/authService';
 
 const Tab = createBottomTabNavigator();
@@ -55,6 +58,9 @@ export default function App() {
     }
   }, [splashComplete, loading]);
 
+  const navigationRef = useRef(null);
+  const [currentRouteName, setCurrentRouteName] = useState('Vínculos');
+
   const handleLoginSuccess = () => {
     setAuthenticated(true);
   };
@@ -86,32 +92,39 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.root}>
       <ErrorBoundary>
-        <NavigationContainer>
-        <Tab.Navigator screenOptions={{ headerShown: false }}>
-          <Tab.Screen 
-            name="Vínculos" 
-            component={VinculosScreen} 
-            options={{ 
-              tabBarIcon: ({color}) => <Ionicons name="leaf" size={24} color={color} /> 
-            }} 
-          />
-          <Tab.Screen 
-            name="Tareas" 
-            component={TareasScreen} 
-            options={{ 
-              tabBarIcon: ({color}) => <Ionicons name="checkmark-circle" size={24} color={color} /> 
-            }} 
-          />
-          <Tab.Screen 
-            name="Configuración"
-            options={{ 
-              tabBarIcon: ({color}) => <Ionicons name="settings" size={24} color={color} /> 
-            }}
-          >
-            {() => <ConfiguracionScreen onLogout={handleLogout} />}
-          </Tab.Screen>
-        </Tab.Navigator>
-      </NavigationContainer>
+        <SafeAreaProvider>
+          <VoiceGlobalProvider>
+            <View style={styles.root}>
+              <NavigationContainer ref={navigationRef}>
+                <Tab.Navigator screenOptions={{ headerShown: false }}>
+                  <Tab.Screen 
+                    name="Vínculos" 
+                    component={VinculosScreen} 
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="leaf" size={24} color={color} /> 
+                    }} 
+                  />
+                  <Tab.Screen 
+                    name="Gestos" 
+                    component={GestosScreen} 
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="heart" size={24} color={color} /> 
+                    }} 
+                  />
+                  <Tab.Screen 
+                    name="Configuración"
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="settings" size={24} color={color} /> 
+                    }}
+                  >
+                    {() => <ConfiguracionScreen onLogout={handleLogout} />}
+                  </Tab.Screen>
+                </Tab.Navigator>
+              </NavigationContainer>
+              <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
+          </View>
+        </VoiceGlobalProvider>
+        </SafeAreaProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
   );

@@ -25,7 +25,7 @@ const {
   apiLimiter
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
-const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
 const PALABRAS_PROHIBIDAS = require('./config/palabrasProhibidas');
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } }); // 25 MB
@@ -63,6 +63,29 @@ async function checkAILimitFreeUser(usuario) {
     );
   }
   return null;
+}
+
+/** Incrementa contadores de uso de IA (día, mes, coste). Resetea mes si es nuevo mes. costUsd opcional: coste real por tokens; si no se pasa y addCost es true, se usa estimado fijo. */
+async function incrementAIUsage(usuario, addCost = true, costUsd = undefined) {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const lastResetMes = usuario.aiUltimoResetMes ? new Date(usuario.aiUltimoResetMes) : null;
+  if (!lastResetMes || lastResetMes.getTime() < startOfMonth.getTime()) {
+    usuario.aiPeticionesMes = 0;
+    usuario.aiUltimoResetMes = startOfMonth;
+    usuario.markModified('aiPeticionesMes');
+    usuario.markModified('aiUltimoResetMes');
+  }
+  usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
+  usuario.aiPeticionesMes = (usuario.aiPeticionesMes ?? 0) + 1;
+  if (addCost) {
+    const costToAdd = typeof costUsd === 'number' && costUsd >= 0 ? costUsd : COSTE_ESTIMADO_POR_PETICION_USD;
+    usuario.aiEstimatedCostUsd = (usuario.aiEstimatedCostUsd ?? 0) + costToAdd;
+    usuario.markModified('aiEstimatedCostUsd');
+  }
+  usuario.markModified('aiPeticionesHoy');
+  usuario.markModified('aiPeticionesMes');
+  await usuario.save();
 }
 
 const app = express();
@@ -359,19 +382,30 @@ app.get('/api/auth/me', authenticateToken, async (req, res, next) => {
       return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
     }
 
+    const hoy = usuario.aiPeticionesHoy ?? 0;
+    const mes = usuario.aiPeticionesMes ?? 0;
+    // Mes acumulativo: al menos el valor de hoy (por si el documento no tenía el campo o no se persistió)
+    const aiPeticionesMesMostrar = Math.max(mes, hoy);
+
     res.json({
       usuario: {
         id: usuario._id,
         email: usuario.email,
         nombre: usuario.nombre,
         plan: usuario.plan || 'Free',
-        aiPeticionesHoy: usuario.aiPeticionesHoy ?? 0,
+        aiPeticionesHoy: hoy,
+        aiPeticionesMes: aiPeticionesMesMostrar,
         aiEstimatedCostUsd: usuario.aiEstimatedCostUsd ?? 0
       }
     });
   } catch (error) {
     next(error);
   }
+});
+
+// GET - Tipos de Gesto para filtros (sin paréntesis). La lista completa con paréntesis se usa en el prompt de IA.
+app.get('/api/config/tipos-de-gesto', authenticateToken, (req, res) => {
+  res.json({ display: TIPOS_DE_GESTO_DISPLAY });
 });
 
 // ============================================
@@ -400,11 +434,13 @@ app.post('/api/ai/voice-to-task', authenticateToken, upload.single('audio'), asy
     const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
 
     const mimeType = req.file.mimetype || 'audio/mp4';
-    const { texto, vinculo, tarea, fecha } = await voiceToTaskStructured(
+    const result = await voiceToTaskStructured(
       req.file.buffer,
       mimeType,
       nombresContactos
     );
+    const { texto, vinculo, tarea, fecha, usage } = result;
+    const costUsd = usage ? calcCostFromUsage(usage.prompt_tokens, usage.completion_tokens) : undefined;
 
     let contacto = null;
     if (vinculo && vinculo !== 'Sin asignar') {
@@ -450,9 +486,7 @@ app.post('/api/ai/voice-to-task', authenticateToken, upload.single('audio'), asy
     contacto.markModified('tareas');
     await contacto.save();
 
-    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
-    usuario.aiEstimatedCostUsd = (usuario.aiEstimatedCostUsd ?? 0) + COSTE_ESTIMADO_POR_PETICION_USD;
-    await usuario.save();
+    await incrementAIUsage(usuario, true, costUsd);
 
     logger.info('AI voice-to-task', { userId: req.user.id, contactoId: contacto._id, texto: texto?.slice(0, 80) });
 
@@ -483,11 +517,13 @@ async function handleVoicePreview(req, res, next, audioBuffer, mimeType = 'audio
     if (limitError) return next(limitError);
     const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre').lean();
     const nombresContactos = contactos.map(c => c.nombre).filter(Boolean);
-    const { texto, vinculo, tarea, fecha } = await voiceToTaskStructured(
+    const result = await voiceToTaskStructured(
       audioBuffer,
       mimeType,
       nombresContactos
     );
+    const { texto, vinculo, tarea, fecha, usage } = result;
+    const costUsd = usage ? calcCostFromUsage(usage.prompt_tokens, usage.completion_tokens) : undefined;
     let contacto = null;
     if (vinculo && vinculo !== 'Sin asignar') {
       const nombreNorm = vinculo.trim().toLowerCase();
@@ -502,9 +538,7 @@ async function handleVoicePreview(req, res, next, audioBuffer, mimeType = 'audio
     if (!contacto) {
       contacto = await Contacto.findOne({ usuarioId: req.user.id }).sort({ updatedAt: -1 });
     }
-    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
-    usuario.aiEstimatedCostUsd = (usuario.aiEstimatedCostUsd ?? 0) + COSTE_ESTIMADO_POR_PETICION_USD;
-    await usuario.save();
+    await incrementAIUsage(usuario, true, costUsd);
     const contactoId = contacto ? contacto._id.toString() : null;
     const contactoNombre = contacto ? contacto.nombre : null;
     res.status(200).json({
@@ -704,8 +738,8 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     const contactoId = contactoMatch ? contactoMatch._id.toString() : null;
     const contactoNombre = contactoMatch ? (contactoMatch.nombre || extracted.vinculo) : (extracted.vinculo || 'Sin asignar');
 
-    usuario.aiPeticionesHoy = (usuario.aiPeticionesHoy ?? 0) + 1;
-    await usuario.save();
+    const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
+    await incrementAIUsage(usuario, true, costUsd);
 
     // Voicenote sin cambios: descripción y tarea = transcripción de Whisper tal cual
     const descripcionFinal = textoTrim;
@@ -826,7 +860,7 @@ app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, r
       return res.status(404).json({ error: 'Contacto no encontrado.' });
     }
     const fechaEjecucion = req.body.fechaHoraEjecucion ? new Date(req.body.fechaHoraEjecucion) : new Date();
-    const clasificacion = req.body.clasificacion && ['Llamar', 'Visitar', 'Enviar mensaje', 'Cumpleaños', 'Otro'].includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
+    const clasificacion = req.body.clasificacion && TIPOS_DE_GESTO_DISPLAY.includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
     // Solo descripcion (transcripción en texto). NUNCA usar doc.audioBase64 ni guardar audio.
     const nuevaTarea = {
       fechaHoraCreacion: new Date(),
