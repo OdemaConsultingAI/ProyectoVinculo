@@ -39,7 +39,8 @@ export const fetchWithAuth = async (url, options = {}) => {
         errorData = { error: `Error ${response.status}: ${response.statusText}` };
       }
 
-      const error = new Error(errorData.error || 'Error en la solicitud');
+      const msg = errorData.error || errorData.message || 'Error en la solicitud';
+      const error = new Error(typeof msg === 'string' ? msg : 'Error en la solicitud');
       error.response = {
         status: response.status,
         statusText: response.statusText,

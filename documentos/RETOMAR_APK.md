@@ -96,4 +96,23 @@ Cuando el build termine en verde:
 2. Abre el último build de Android (preview).
 3. Descarga el APK desde el enlace que aparece.
 4. En el móvil Android: activa **"Instalar desde fuentes desconocidas"** (o "Instalar apps desconocidas") para el navegador o la app desde la que descargues, e instala el APK.
-Y
+
+---
+
+## Error 404 al guardar gesto, momento o desahogo (desde nota de voz)
+
+Si la transcripción va bien (POST a `/api/ai/voice-temp/transcribe` devuelve 200) pero al pulsar **Guardar como Gesto**, **Guardar como Momento** o **Guardar como Desahogo** obtienes **404**, casi siempre es porque **el backend desplegado en Render no tiene las rutas nuevas** (from-voice y refugio).
+
+**Qué hacer:**
+
+1. **Comprobar la versión del backend en Render**  
+   Abre en el navegador (o con curl):  
+   `https://proyectovinculo.onrender.com/api/version`  
+   - Si ves JSON con `version: "1.2.0"` y `features: ["refugio", "from-voice", ...]`, el backend está actualizado; entonces el 404 puede ser por "nota temporal no encontrada" (graba de nuevo y guarda en seguida).  
+   - Si obtienes **404** o una página de "Cannot GET /api/version", **despliega de nuevo el backend** en Render con el código actual (que incluye `GET /api/version`, `POST /api/refugio/desahogo` y `POST /api/contacto/:id/interacciones/from-voice` y `.../tareas/from-voice`).
+
+2. **Desplegar el backend en Render**  
+   Sube los últimos cambios del repo a tu rama y en el panel de Render dispara un **manual deploy** del servicio backend (o haz push si tienes deploy automático). Tras el deploy, vuelve a llamar a `https://proyectovinculo.onrender.com/api/version` y confirma que devuelve la versión 1.2.0.
+
+3. **Logs en la app**  
+   Al guardar (gesto, momento o desahogo) la app escribe en consola la URL del POST (p. ej. `[VoiceTemp] POST guardar desahogo → https://.../api/refugio/desahogo`). Si hay 404, además se llama a `GET /api/version` y se escribe el resultado (`[VoiceTemp] Diagnóstico 404: GET /api/version → 200 version 1.2.0` o bien 404 si el backend está viejo). Si el body del 404 está vacío o es HTML ("Cannot POST ..."), es ruta inexistente en el servidor; si tiene `message`/`error` con "no encontrada" o "borrada", es la nota temporal: graba de nuevo y guarda en seguida.

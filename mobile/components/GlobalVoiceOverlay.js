@@ -17,7 +17,7 @@ import { useVoiceGlobal } from '../context/VoiceGlobalContext';
 import { COLORES } from '../constants/colores';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
-import { loadContacts, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
+import { loadContacts, saveInteractionFromVoice, saveTaskFromVoice, saveDesahogoFromVoice } from '../services/syncService';
 import { normalizeForMatch } from '../utils/validations';
 
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
@@ -505,6 +505,35 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     <Ionicons name="chatbubble-outline" size={22} color="white" />
                     <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
                   </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonRefugio]}
+                    onPress={async () => {
+                      if (!voicePreviewTempId) {
+                        Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
+                        return;
+                      }
+                      try {
+                        await saveDesahogoFromVoice(voicePreviewTempId);
+                        if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                        closeVoicePreview();
+                        navigationRef?.current?.navigate('Mi Refugio', { refreshDesahogos: true });
+                        Alert.alert(
+                          'Guardado en Mi Refugio',
+                          'Tu desahogo se guardó. Solo tú puedes verlo.',
+                          [
+                            { text: 'Ver Mi Refugio', onPress: () => navigationRef?.current?.navigate('Mi Refugio', { refreshDesahogos: true }) },
+                            { text: 'Cerrar', style: 'cancel' },
+                          ]
+                        );
+                      } catch (e) {
+                        const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                        Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar en Mi Refugio.'));
+                      }
+                    }}
+                  >
+                    <Ionicons name="archive-outline" size={22} color="white" />
+                    <Text style={styles.modalVoicePreviewButtonText}>Guardar como Desahogo</Text>
+                  </TouchableOpacity>
                 </>
               )}
               <TouchableOpacity style={styles.modalVoicePreviewCancel} onPress={closeVoicePreview}>
@@ -825,6 +854,9 @@ const styles = StyleSheet.create({
   },
   modalVoicePreviewButtonInteraction: {
     backgroundColor: COLORES.textoSecundario,
+  },
+  modalVoicePreviewButtonRefugio: {
+    backgroundColor: '#6B7FD7',
   },
   modalVoicePreviewButtonSuggested: {
     borderWidth: 2,

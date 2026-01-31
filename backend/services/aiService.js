@@ -204,7 +204,7 @@ ${listaClasificacion}
 
 Texto transcrito: "${texto}"
 
-Responde solo con el JSON de 6 claves: tipo, vinculo, clasificacion, fecha, hora (HH:mm 24h), descripcion (texto breve para la tarjeta). No reescribas el audio completo.`;
+Responde solo con el JSON de 5 claves: tipo, vinculo, clasificacion, fecha, hora (HH:mm 24h). No resumas ni reescribas el texto; solo clasifica (tipo de gesto, contacto, fecha). La transcripción se guarda completa tal cual.`;
 
   const completion = await client.chat.completions.create({
     model: MODEL_VOICE,
@@ -268,12 +268,97 @@ Responde solo con el JSON de 6 claves: tipo, vinculo, clasificacion, fecha, hora
   };
 }
 
+/** Etiquetas emocionales para Mi Refugio (desahogo). */
+const ETIQUETAS_DESAHOGO = ['Calma', 'Estrés', 'Gratitud', 'Tristeza', 'Alegre', 'Depresivo'];
+
+/**
+ * Extrae emoción predominante y frase reflexiva de un texto de desahogo.
+ * No crea tareas ni gestos; solo valida la emoción del usuario.
+ * @param {string} texto - Texto transcrito del desahogo
+ * @returns {Promise<{ emotion: string, resumenReflexivo: string, usage?: object }>}
+ */
+async function extractDesahogo(texto) {
+  const client = getClient();
+  const systemContent = `Eres un asistente de bienestar. Analizas notas de voz personales (desahogos) con empatía, sin juzgar.
+Tu ÚNICA tarea: clasificar la emoción predominante del texto (triste, alegre, estresado, calmado, agradecido, depresivo, etc.). No resumas, no reescribas, no modifiques el contenido. Solo devuelves la etiqueta emocional.
+Devuelves ÚNICAMENTE un JSON con UNA clave:
+- "emotion": exactamente UNA de: Calma, Estrés, Gratitud, Tristeza, Alegre, Depresivo`;
+
+  const userContent = `Texto del usuario (solo para clasificar emoción; no lo resumas): "${(texto || '').trim().slice(0, 2000)}"
+
+Responde solo con el JSON, sin markdown. Ejemplo: {"emotion":"Alegre"}`;
+
+  const completion = await client.chat.completions.create({
+    model: MODEL_VOICE,
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent }
+    ],
+    temperature: 0.4,
+    max_tokens: 150
+  });
+
+  const raw = completion.choices[0]?.message?.content?.trim() || '{}';
+  let parsed;
+  try {
+    const jsonStr = raw.replace(/^```json?\s*|\s*```$/g, '').trim();
+    parsed = JSON.parse(jsonStr);
+  } catch (e) {
+    parsed = { emotion: 'Calma', resumenReflexivo: '' };
+  }
+
+  const emotionRaw = typeof parsed.emotion === 'string' ? parsed.emotion.trim() : 'Calma';
+  const emotion = ETIQUETAS_DESAHOGO.includes(emotionRaw) ? emotionRaw : 'Calma';
+
+  return {
+    emotion,
+    resumenReflexivo: '', // No se usa: la transcripción se muestra completa; la IA solo clasifica emoción
+    usage: completion.usage || null
+  };
+}
+
+/**
+ * El Espejo: resumen breve del estado de ánimo de la semana (últimos 7 días de desahogos).
+ * Sin juzgar; tono cálido y validante.
+ * @param {Array<{ emotion: string, resumenReflexivo?: string }>} desahogos - Lista de desahogos de la semana
+ * @returns {Promise<string>} Una frase breve (máx. ~120 caracteres)
+ */
+async function getEspejoSummary(desahogos) {
+  if (!desahogos || desahogos.length === 0) {
+    return '';
+  }
+  const client = getClient();
+  const resumen = desahogos
+    .map((d) => `- ${d.emotion || 'Calma'}${d.resumenReflexivo ? `: ${d.resumenReflexivo.slice(0, 80)}` : ''}`)
+    .join('\n');
+  const systemContent = `Eres un espejo empático. Recibes una lista de emociones y frases de alguien durante su semana.
+Tu tarea: escribe UNA sola frase breve (máx. 120 caracteres) que resuma su estado de ánimo general de la semana.
+Tono: cálido, validante, sin juzgar. No des consejos ni tareas. Ejemplo: "Esta semana se notó un vaivén entre calma y gratitud."`;
+
+  const userContent = `Resumen de la semana:\n${resumen}\n\nResponde solo con esa frase, sin comillas ni explicaciones.`;
+
+  const completion = await client.chat.completions.create({
+    model: MODEL_VOICE,
+    messages: [
+      { role: 'system', content: systemContent },
+      { role: 'user', content: userContent }
+    ],
+    temperature: 0.5,
+    max_tokens: 80
+  });
+
+  const raw = completion.choices[0]?.message?.content?.trim() || '';
+  return raw.slice(0, 200);
+}
+
 module.exports = {
   transcribe,
   textToTask,
   voiceToTaskStructured,
   getVoicePrompt,
   extractVoiceAction,
+  extractDesahogo,
+  getEspejoSummary,
   calcCostFromUsage,
   TIPOS_DE_GESTO_FULL,
   TIPOS_DE_GESTO_DISPLAY,

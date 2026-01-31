@@ -26,7 +26,7 @@ import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
-import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
+import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice, saveDesahogoFromVoice } from '../services/syncService';
 import { normalizeForMatch } from '../utils/validations';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
@@ -1023,6 +1023,40 @@ export default function GestosScreen() {
                   <Ionicons name="chatbubble-outline" size={22} color="white" />
                   <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
                 </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonRefugio]}
+                  onPress={async () => {
+                    if (!voicePreviewTempId) {
+                      Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
+                      return;
+                    }
+                    try {
+                      await saveDesahogoFromVoice(voicePreviewTempId);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      setModalVoicePreviewVisible(false);
+                      setVoicePreviewData(null);
+                      setVoicePreviewAudioUri(null);
+                      setVoicePreviewTempId(null);
+                      setVoicePreviewTranscription(null);
+                      setVoiceTranscribing(false);
+                      navigation.navigate('Mi Refugio', { refreshDesahogos: true });
+                      Alert.alert(
+                        'Guardado en Mi Refugio',
+                        'Tu desahogo se guardó. Solo tú puedes verlo.',
+                        [
+                          { text: 'Ver Mi Refugio', onPress: () => navigation.navigate('Mi Refugio', { refreshDesahogos: true }) },
+                          { text: 'Cerrar', style: 'cancel' },
+                        ]
+                      );
+                    } catch (e) {
+                      const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                      Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar en Mi Refugio.'));
+                    }
+                  }}
+                >
+                  <Ionicons name="archive-outline" size={22} color="white" />
+                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como Desahogo</Text>
+                </TouchableOpacity>
               </>
               )}
               <TouchableOpacity
@@ -1657,6 +1691,9 @@ const styles = StyleSheet.create({
   },
   modalVoicePreviewButtonInteraction: {
     backgroundColor: COLORES.textoSecundario,
+  },
+  modalVoicePreviewButtonRefugio: {
+    backgroundColor: '#6B7FD7',
   },
   modalVoicePreviewButtonSuggested: {
     borderWidth: 2,

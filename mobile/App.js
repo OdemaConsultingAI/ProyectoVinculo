@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import VinculosScreen from './screens/VinculosScreen';
 import GestosScreen from './screens/GestosScreen';
+import MiRefugioScreen from './screens/MiRefugioScreen';
 import ConfiguracionScreen from './screens/ConfiguracionScreen';
 import LoginScreen from './screens/LoginScreen';
 import SplashScreen from './screens/SplashScreen';
@@ -143,6 +144,13 @@ export default function App() {
                     component={GestosScreen} 
                     options={{ 
                       tabBarIcon: ({color}) => <Ionicons name="heart" size={24} color={color} /> 
+                    }} 
+                  />
+                  <Tab.Screen 
+                    name="Mi Refugio" 
+                    component={MiRefugioScreen} 
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="archive" size={24} color={color} /> 
                     }} 
                   />
                   <Tab.Screen 

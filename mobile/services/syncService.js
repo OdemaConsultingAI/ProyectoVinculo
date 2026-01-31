@@ -1,6 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import NetInfo from '@react-native-community/netinfo';
-import { API_URL, fetchWithAuth } from '../constants/api';
+import { API_URL, API_BASE_URL, fetchWithAuth } from '../constants/api';
 
 // Claves de almacenamiento
 const STORAGE_KEY_CONTACTOS = '@vinculo_contactos_cache';
@@ -503,25 +503,126 @@ export const saveInteractionFromVoice = async (contactoId, tempId, texto = '') =
   if (!isOnline) {
     throw new Error('Necesitas conexión para guardar la nota de voz.');
   }
-  const response = await fetchWithAuth(`${API_URL}/${contactoId}/interacciones/from-voice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tempId, texto: typeof texto === 'string' ? texto : '' }),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 404) {
-      throw new Error('El servidor no tiene la función de guardar nota de voz. Haz un despliegue del backend en Render con los últimos cambios.');
+  const url = `${API_URL}/${contactoId}/interacciones/from-voice`;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempId, texto: typeof texto === 'string' ? texto : '' }),
+    });
+    const savedContact = await response.json();
+    const cachedContacts = await loadContactsFromCache();
+    const finalContacts = cachedContacts.map(c =>
+      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+    );
+    await saveContactsToCache(finalContacts);
+    return { success: true, contacto: savedContact };
+  } catch (err) {
+    const status = err.response?.status;
+    const data = err.response?.data || {};
+    const msg = data.error || data.message || err.message;
+    if (status === 404) {
+      console.warn('[VoiceTemp] 404 guardar momento | url:', url, '| body:', JSON.stringify(data));
+      if (msg && typeof msg === 'string' && (msg.includes('no encontrada') || msg.includes('borrada'))) {
+        throw new Error('La nota ya no está disponible. Graba de nuevo y guarda en seguida.');
+      }
+      if (msg && typeof msg === 'string' && msg.includes('Contacto no encontrado')) {
+        throw new Error('Contacto no encontrado. Comprueba que sigue en tu lista de vínculos.');
+      }
+      throw new Error('Ruta no encontrada (404). Despliega el backend en Render con los últimos cambios (voz / Mi Refugio).');
     }
-    throw new Error(data.error || data.message || 'Error al guardar el momento.');
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el momento.');
   }
-  const savedContact = await response.json();
-  const cachedContacts = await loadContactsFromCache();
-  const finalContacts = cachedContacts.map(c =>
-    c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
-  );
-  await saveContactsToCache(finalContacts);
-  return { success: true, contacto: savedContact };
+};
+
+const REFUGIO_URL = `${API_BASE_URL}/api/refugio`;
+
+/** Diagnóstico: comprobar si el backend tiene rutas de voz/refugio (al recibir 404). */
+const checkApiVersionOn404 = async () => {
+  try {
+    const r = await fetch(`${API_BASE_URL}/api/version`);
+    const data = r.ok ? await r.json() : null;
+    console.log('[VoiceTemp] Diagnóstico 404: GET /api/version →', r.status, data ? `version ${data.version}` : r.statusText);
+    if (!r.ok || !data?.features?.includes('refugio')) {
+      console.warn('[VoiceTemp] El backend en Render puede estar desactualizado. Redespliega con el último index.js (rutas refugio, from-voice).');
+    }
+  } catch (e) {
+    console.warn('[VoiceTemp] No se pudo comprobar /api/version:', e?.message);
+  }
+};
+
+/** Guardar nota temporal como desahogo (Mi Refugio). Solo transcripción + emoción, sin contacto. */
+export const saveDesahogoFromVoice = async (tempId) => {
+  if (!isOnline) {
+    throw new Error('Necesitas conexión para guardar en Mi Refugio.');
+  }
+  const url = `${REFUGIO_URL}/desahogo`;
+  console.log('[VoiceTemp] POST guardar desahogo →', url);
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tempId: typeof tempId === 'string' ? tempId : '' }),
+    });
+    const result = await response.json();
+    return { success: true, desahogo: result.desahogo };
+  } catch (err) {
+    const status = err.response?.status;
+    const data = err.response?.data || {};
+    const msg = data.error || data.message || err.message;
+    if (status === 404) {
+      console.warn('[VoiceTemp] 404 guardar desahogo | url:', url, '| body:', JSON.stringify(data));
+      checkApiVersionOn404();
+      if (msg && typeof msg === 'string' && (msg.includes('no encontrada') || msg.includes('borrada'))) {
+        throw new Error('La nota ya no está disponible. Graba de nuevo y guarda en Mi Refugio en seguida.');
+      }
+      throw new Error('Ruta no encontrada (404). Despliega el backend en Render con los últimos cambios (Mi Refugio y voz).');
+    }
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el desahogo.');
+  }
+};
+
+/** Listar desahogos del usuario (Mi Refugio). */
+export const loadDesahogos = async () => {
+  if (!isOnline) {
+    return [];
+  }
+  try {
+    const response = await fetchWithAuth(`${REFUGIO_URL}/desahogos`);
+    if (!response.ok) return [];
+    const list = await response.json();
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    console.warn('Error cargando desahogos:', e?.message);
+    return [];
+  }
+};
+
+/** Obtener un desahogo por ID (incluye audioBase64 para Escucha Retrospectiva). */
+export const getDesahogoById = async (id) => {
+  if (!isOnline || !id) return null;
+  try {
+    const response = await fetchWithAuth(`${REFUGIO_URL}/desahogos/${id}`);
+    if (!response.ok) return null;
+    return await response.json();
+  } catch (e) {
+    console.warn('Error obteniendo desahogo:', e?.message);
+    return null;
+  }
+};
+
+/** El Espejo: resumen semanal de estado de ánimo (IA). */
+export const getEspejo = async () => {
+  if (!isOnline) return null;
+  try {
+    const response = await fetchWithAuth(`${REFUGIO_URL}/espejo`);
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data?.text || null;
+  } catch (e) {
+    console.warn('Error obteniendo El Espejo:', e?.message);
+    return null;
+  }
 };
 
 /** Guardar tarea desde nota de voz: guarda la transcripción íntegra (sin audio). Requiere conexión. */
@@ -532,23 +633,36 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
   const body = { tempId, texto: typeof texto === 'string' ? texto : '' };
   if (fechaHoraEjecucion) body.fechaHoraEjecucion = typeof fechaHoraEjecucion === 'string' ? fechaHoraEjecucion : fechaHoraEjecucion.toISOString?.() || new Date(fechaHoraEjecucion).toISOString();
   if (clasificacion) body.clasificacion = clasificacion;
-  const response = await fetchWithAuth(`${API_URL}/${contactoId}/tareas/from-voice`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    if (response.status === 404) {
-      throw new Error('El servidor no tiene la función de guardar nota de voz. Haz un despliegue del backend en Render con los últimos cambios.');
+  const url = `${API_URL}/${contactoId}/tareas/from-voice`;
+  console.log('[VoiceTemp] POST guardar gesto →', url, '| contactoId:', contactoId);
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const savedContact = await response.json();
+    const cachedContacts = await loadContactsFromCache();
+    const finalContacts = cachedContacts.map(c =>
+      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+    );
+    await saveContactsToCache(finalContacts);
+    return { success: true, contacto: savedContact };
+  } catch (err) {
+    const status = err.response?.status;
+    const data = err.response?.data || {};
+    const msg = data.error || data.message || err.message;
+    if (status === 404) {
+      console.warn('[VoiceTemp] 404 guardar gesto | url:', url, '| body:', JSON.stringify(data));
+      checkApiVersionOn404();
+      if (msg && typeof msg === 'string' && (msg.includes('no encontrada') || msg.includes('borrada'))) {
+        throw new Error('La nota ya no está disponible. Graba de nuevo y guarda en seguida.');
+      }
+      if (msg && typeof msg === 'string' && msg.includes('Contacto no encontrado')) {
+        throw new Error('Contacto no encontrado. Comprueba que sigue en tu lista de vínculos.');
+      }
+      throw new Error('Ruta no encontrada (404). Despliega el backend en Render con los últimos cambios (voz / Mi Refugio).');
     }
-    throw new Error(data.error || data.message || 'Error al guardar el gesto.');
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el gesto.');
   }
-  const savedContact = await response.json();
-  const cachedContacts = await loadContactsFromCache();
-  const finalContacts = cachedContacts.map(c =>
-    c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
-  );
-  await saveContactsToCache(finalContacts);
-  return { success: true, contacto: savedContact };
 };

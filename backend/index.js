@@ -7,6 +7,7 @@ const Contacto = require('./models/Contacto');
 const Usuario = require('./models/Usuario');
 const Test = require('./models/Test');
 const VoiceNoteTemp = require('./models/VoiceNoteTemp');
+const Desahogo = require('./models/Desahogo');
 const { authenticateToken, generateToken } = require('./middleware/auth');
 const { errorHandler, createError, ERROR_CODES } = require('./middleware/errorHandler');
 const logger = require('./utils/logger');
@@ -25,7 +26,7 @@ const {
   apiLimiter
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
-const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, extractDesahogo, getEspejoSummary, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
 const { sendPushToUser } = require('./services/pushService');
 const { sendRemindersGestosHoy } = require('./services/reminderService');
 const PALABRAS_PROHIBIDAS = require('./config/palabrasProhibidas');
@@ -198,6 +199,15 @@ app.get('/api/health', async (req, res, next) => {
   } catch (error) {
     next(error);
   }
+});
+
+// Versión del API (sin auth) — para comprobar que Render tiene el deploy actual (gesto/momento/desahogo desde voz)
+app.get('/api/version', (req, res) => {
+  res.json({
+    version: '1.2.0',
+    features: ['refugio', 'from-voice', 'voice-temp-transcribe'],
+    timestamp: new Date().toISOString()
+  });
 });
 
 // ============================================
@@ -818,7 +828,7 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
     await incrementAIUsage(usuario, true, costUsd);
 
-    // Voicenote sin cambios: descripción y tarea = transcripción de Whisper tal cual
+    // Transcripción completa: la IA solo clasifica (tipo, contacto, fecha, etc.). No se resume ni modifica el texto.
     const descripcionFinal = textoTrim;
     const tareaFinal = extracted.tipo === 'tarea' ? textoTrim : '';
 
@@ -827,7 +837,7 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
       tipo: extracted.tipo,
       vinculo: extracted.vinculo,
       tarea: tareaFinal,
-      descripcion: (extracted.descripcion && extracted.descripcion.trim()) ? extracted.descripcion.trim() : descripcionFinal,
+      descripcion: descripcionFinal,
       fecha: extracted.fecha,
       hora: extracted.hora || '09:00',
       clasificacion: extracted.clasificacion || 'Otro',
@@ -848,6 +858,144 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
     return res.status(503).json({
       error: msg.includes('API') || msg.includes('OpenAI') ? 'No se pudo transcribir el audio. Verifica tu conexión o intenta de nuevo.' : msg,
     });
+  }
+});
+
+// ============================================
+// MI REFUGIO - Desahogos (privados, solo usuario)
+// ============================================
+
+// POST - Guardar nota temporal como desahogo (transcribir + IA emoción + guardar)
+app.post('/api/refugio/desahogo', authenticateToken, async (req, res, next) => {
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+    return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
+  }
+  const tempId = req.body && req.body.tempId;
+  if (!tempId || typeof tempId !== 'string') {
+    return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+  }
+  try {
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario) {
+      return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+    }
+    const limitError = await checkAILimitFreeUser(usuario);
+    if (limitError) return next(limitError);
+
+    const doc = await VoiceNoteTemp.findOne({ _id: tempId.trim(), usuarioId: req.user.id });
+    if (!doc) {
+      return res.status(404).json({ message: 'Nota temporal no encontrada o ya borrada.' });
+    }
+    const buffer = Buffer.from(doc.audioBase64, 'base64');
+    if (buffer.length === 0) {
+      return next(createError('El audio está vacío.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    const texto = await transcribe(buffer, 'audio/mp4');
+    const textoTrim = (texto || '').trim();
+    if (!textoTrim) {
+      return next(createError('No se pudo transcribir el audio.', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+
+    if (textoTrim.length < MIN_CARACTERES_PARA_GPT) {
+      const desahogo = await Desahogo.create({
+        usuarioId: req.user.id,
+        transcription: textoTrim,
+        emotion: 'Calma',
+        resumenReflexivo: '',
+        audioBase64: doc.audioBase64,
+        createdAt: new Date()
+      });
+      await VoiceNoteTemp.findOneAndDelete({ _id: tempId.trim(), usuarioId: req.user.id });
+      return res.status(201).json({
+        desahogo: {
+          _id: desahogo._id,
+          transcription: desahogo.transcription,
+          emotion: desahogo.emotion,
+          resumenReflexivo: desahogo.resumenReflexivo,
+          createdAt: desahogo.createdAt
+        }
+      });
+    }
+
+    const extracted = await extractDesahogo(textoTrim);
+    const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
+    await incrementAIUsage(usuario, true, costUsd);
+
+    const desahogo = await Desahogo.create({
+      usuarioId: req.user.id,
+      transcription: textoTrim,
+      emotion: extracted.emotion,
+      resumenReflexivo: extracted.resumenReflexivo,
+      audioBase64: doc.audioBase64,
+      createdAt: new Date()
+    });
+    await VoiceNoteTemp.findOneAndDelete({ _id: tempId.trim(), usuarioId: req.user.id });
+
+    res.status(201).json({
+      desahogo: {
+        _id: desahogo._id,
+        transcription: desahogo.transcription,
+        emotion: desahogo.emotion,
+        resumenReflexivo: desahogo.resumenReflexivo,
+        createdAt: desahogo.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Error en POST refugio/desahogo:', error?.message || error);
+    if (error?.status === 400) {
+      return res.status(400).json({ error: error.message || 'Datos inválidos.' });
+    }
+    const msg = error?.message || 'Error al guardar el desahogo.';
+    return res.status(503).json({ error: msg });
+  }
+});
+
+// GET - Listar desahogos del usuario (solo metadatos; sin audio)
+app.get('/api/refugio/desahogos', authenticateToken, async (req, res, next) => {
+  try {
+    const list = await Desahogo.find({ usuarioId: req.user.id })
+      .sort({ createdAt: -1 })
+      .select('transcription emotion resumenReflexivo createdAt _id')
+      .lean();
+    res.json(list);
+  } catch (error) {
+    console.error('Error en GET refugio/desahogos:', error);
+    next(error);
+  }
+});
+
+// GET - Un desahogo por ID (incluye audioBase64 para Escucha Retrospectiva)
+app.get('/api/refugio/desahogos/:id', authenticateToken, async (req, res, next) => {
+  try {
+    const doc = await Desahogo.findOne({ _id: req.params.id, usuarioId: req.user.id }).lean();
+    if (!doc) {
+      return res.status(404).json({ message: 'Desahogo no encontrado.' });
+    }
+    res.json(doc);
+  } catch (error) {
+    console.error('Error en GET refugio/desahogos/:id:', error);
+    next(error);
+  }
+});
+
+// GET - El Espejo: resumen semanal de estado de ánimo (IA, sin juzgar)
+app.get('/api/refugio/espejo', authenticateToken, async (req, res, next) => {
+  if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
+    return res.json({ text: 'Esta semana no hay resumen disponible.' });
+  }
+  try {
+    const hace7 = new Date();
+    hace7.setDate(hace7.getDate() - 7);
+    const desahogos = await Desahogo.find({ usuarioId: req.user.id, createdAt: { $gte: hace7 } })
+      .sort({ createdAt: 1 })
+      .select('emotion resumenReflexivo')
+      .lean();
+    const text = await getEspejoSummary(desahogos);
+    res.json({ text: text || 'Esta semana no hay suficientes entradas para un resumen.' });
+  } catch (error) {
+    console.error('Error en GET refugio/espejo:', error);
+    res.json({ text: 'No se pudo generar el resumen esta semana.' });
   }
 });
 
