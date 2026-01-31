@@ -123,6 +123,7 @@ export default function VinculosScreen() {
   const [dateMode, setDateMode] = useState('date');
   
   const { setVoicePreviewContactoFromModal, setCurrentContactForVoice, setVoiceRecording } = useVoiceGlobal();
+  const { openAyuda } = useAyuda();
   const inputNuevaInteraccionRef = useRef(null);
   // Estados para modal de interacciones (historial, se pueden editar)
   const [modalInteraccionesVisible, setModalInteraccionesVisible] = useState(false);
@@ -3495,6 +3496,9 @@ export default function VinculosScreen() {
               <Ionicons name="person" size={24} color={COLORES.textoSuave} />
               <Text style={styles.contador}>{vinculos.length}</Text>
             </View>
+            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+              <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+            </TouchableOpacity>
             <NotificationBell />
           </View>
         </View>

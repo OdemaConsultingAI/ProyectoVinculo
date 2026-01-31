@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Alert, ActivityIndicator, Tex
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
+import { useAyuda } from '../context/AyudaContext';
 import { getUser, logout, changePassword, upgradeToPremium, getCurrentUser } from '../services/authService';
 import NotificationBell from '../components/NotificationBell';
 
@@ -150,6 +151,9 @@ export default function ConfiguracionScreen({ onLogout }) {
             <Text style={styles.title}>Configuración</Text>
           </View>
           <View style={styles.headerRight}>
+            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+              <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+            </TouchableOpacity>
             <NotificationBell />
           </View>
         </View>

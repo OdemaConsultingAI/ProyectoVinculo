@@ -13,6 +13,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
+import { useAyuda } from '../context/AyudaContext';
 import { loadDesahogos, getDesahogoById, getEspejo } from '../services/syncService';
 import { playFromBase64 } from '../services/voiceToTaskService';
 
@@ -49,6 +50,7 @@ export default function MiRefugioScreen() {
   const route = useRoute();
   const navigation = useNavigation();
 
+  const { openAyuda } = useAyuda();
   const desahogosFiltrados = filtroEmocion === 'Todas'
     ? desahogos
     : desahogos.filter((d) => (d.emotion || 'Calma') === filtroEmocion);
@@ -195,6 +197,12 @@ export default function MiRefugioScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
+        <View style={styles.headerTopRow}>
+          <View style={{ width: 42 }} />
+          <TouchableOpacity onPress={openAyuda} style={styles.helpButton} accessibilityLabel="Ayuda">
+            <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+          </TouchableOpacity>
+        </View>
         <View style={styles.iconWrap}>
           <Ionicons name="archive" size={40} color={COLORES.agua} />
         </View>
@@ -232,6 +240,15 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
     alignItems: 'center',
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    alignSelf: 'stretch',
+    marginBottom: 8,
+  },
+  headerSpacer: { flex: 1 },
+  helpButton: { padding: 8 },
   iconWrap: {
     width: 72,
     height: 72,

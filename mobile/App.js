@@ -14,7 +14,9 @@ import SplashScreen from './screens/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
+import { AyudaProvider } from './context/AyudaContext';
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
+import AyudaModal from './components/AyudaModal';
 import { isAuthenticated } from './services/authService';
 import { registerAndSendPushToken, addNotificationResponseListener } from './services/pushNotificationService';
 
@@ -163,8 +165,10 @@ export default function App() {
                   </Tab.Screen>
                 </Tab.Navigator>
               </NavigationContainer>
-              <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
-          </View>
+                <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
+                <AyudaModal />
+              </View>
+            </AyudaProvider>
         </VoiceGlobalProvider>
         </SafeAreaProvider>
       </ErrorBoundary>

@@ -30,6 +30,7 @@ import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateCo
 import { normalizeForMatch } from '../utils/validations';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
+import { useAyuda } from '../context/AyudaContext';
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
 const FILTROS_TIPO = ['Todas', ...TIPOS_DE_GESTO_DISPLAY];
@@ -88,6 +89,7 @@ export default function GestosScreen() {
   const [datePickerModeVoice, setDatePickerModeVoice] = useState('date');
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
   const transcribeGenRef = useRef(0);
+  const { openAyuda } = useAyuda();
 
   // Transcribir nota temporal con Whisper cuando se abre el modal con tempId (solo aplicar resultado de la última petición)
   useEffect(() => {
@@ -673,6 +675,9 @@ export default function GestosScreen() {
               <Text style={styles.sourceBadgeText}>{API_SOURCE_LABEL}</Text>
             </View>
           </View>
+          <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+            <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+          </TouchableOpacity>
           <NotificationBell />
         </View>
         <Text style={styles.headerSubtitle}>
