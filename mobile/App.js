@@ -169,7 +169,7 @@ export default function App() {
                 <AyudaModal />
               </View>
             </AyudaProvider>
-        </VoiceGlobalProvider>
+          </VoiceGlobalProvider>
         </SafeAreaProvider>
       </ErrorBoundary>
     </GestureHandlerRootView>
