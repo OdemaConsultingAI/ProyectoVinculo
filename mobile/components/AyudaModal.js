@@ -88,7 +88,7 @@ export default function AyudaModal() {
               ))}
             </ScrollView>
           </SafeAreaView>
-        </View>
+        </Pressable>
       </Pressable>
     </Modal>
   );
