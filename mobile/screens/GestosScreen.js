@@ -14,7 +14,8 @@ import {
   Alert,
   ScrollView,
   Animated,
-  Linking
+  Linking,
+  Dimensions
 } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute } from '@react-navigation/native';
 import Swipeable from 'react-native-gesture-handler/Swipeable';
@@ -26,6 +27,7 @@ import { API_URL, fetchWithAuth } from '../constants/api';
 import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
 import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
+import { normalizeForMatch } from '../utils/validations';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
 
@@ -916,13 +918,25 @@ export default function GestosScreen() {
                     (voicePreviewData.tipo === 'tarea') && styles.modalVoicePreviewButtonSuggested,
                   ]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
+                    if (!voicePreviewTempId) {
+                      Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
                       return;
                     }
-                    const contact = contactos.find(c => c._id === voicePreviewData.contactoId);
+                    let contactoId = voicePreviewData?.contactoId;
+                    if (!contactoId && voicePreviewData?.contactoNombre && Array.isArray(contactos)) {
+                      const porNombre = contactos.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                      if (porNombre?._id) contactoId = porNombre._id;
+                    }
+                    if (!voicePreviewData || !contactoId) {
+                      const nombre = voicePreviewData?.contactoNombre || voicePreviewData?.vinculo || '';
+                      Alert.alert('Aviso', nombre
+                        ? `No se pudo asignar el contacto. Comprueba que "${nombre}" está en tu lista de vínculos.`
+                        : 'No hay contacto asignado. Menciona el nombre del contacto en la nota o añade contactos y graba de nuevo.');
+                      return;
+                    }
+                    const contact = contactos.find(c => c._id === contactoId);
                     if (!contact) {
-                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
+                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista (arrastra para actualizar).');
                       return;
                     }
                     try {
@@ -934,7 +948,7 @@ export default function GestosScreen() {
                       const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
                       let fechaEjecucion = voicePreviewFechaEjecucion && !isNaN(voicePreviewFechaEjecucion.getTime()) ? voicePreviewFechaEjecucion : new Date();
                       if (fechaEjecucion.getTime() < Date.now()) fechaEjecucion = new Date();
-                      await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
+                      await saveTaskFromVoice(contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       cargarTareas();
                       setModalVoicePreviewVisible(false);
@@ -945,7 +959,8 @@ export default function GestosScreen() {
                       setVoiceTranscribing(false);
                       Alert.alert('Gesto guardado', 'Tu gesto se guardó correctamente. Ya está en la lista.');
                     } catch (e) {
-                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                      const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                      Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar.'));
                     }
                   }}
               >
@@ -955,13 +970,25 @@ export default function GestosScreen() {
                 <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
                   onPress={async () => {
-                    if (!voicePreviewData || !voicePreviewData.contactoId || !voicePreviewTempId) {
-                      Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
+                    if (!voicePreviewTempId) {
+                      Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
                       return;
                     }
-                    const contact = contactos.find(c => c._id === voicePreviewData.contactoId);
+                    let contactoId = voicePreviewData?.contactoId;
+                    if (!contactoId && voicePreviewData?.contactoNombre && Array.isArray(contactos)) {
+                      const porNombre = contactos.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                      if (porNombre?._id) contactoId = porNombre._id;
+                    }
+                    if (!voicePreviewData || !contactoId) {
+                      const nombre = voicePreviewData?.contactoNombre || voicePreviewData?.vinculo || '';
+                      Alert.alert('Aviso', nombre
+                        ? `No se pudo asignar el contacto. Comprueba que "${nombre}" está en tu lista de vínculos.`
+                        : 'No hay contacto asignado. Menciona el nombre del contacto en la nota o añade contactos y graba de nuevo.');
+                      return;
+                    }
+                    const contact = contactos.find(c => c._id === contactoId);
                     if (!contact) {
-                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
+                      Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista (arrastra para actualizar).');
                       return;
                     }
                     try {
@@ -970,7 +997,7 @@ export default function GestosScreen() {
                         Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
                         return;
                       }
-                      const { contacto } = await saveInteractionFromVoice(voicePreviewData.contactoId, voicePreviewTempId, textoTranscripcion);
+                      const { contacto } = await saveInteractionFromVoice(contactoId, voicePreviewTempId, textoTranscripcion);
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       cargarTareas();
                       setModalVoicePreviewVisible(false);
@@ -983,12 +1010,13 @@ export default function GestosScreen() {
                         'Momento guardado',
                         'Se guardó como texto. Toca "Ver momentos" para ir directo a verlo.',
                         [
-                          { text: 'Ver momentos', onPress: () => navigation.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
+                          { text: 'Ver momentos', onPress: () => navigation.navigate('Vínculos', { openContactId: contactoId, openContact: contacto }) },
                           { text: 'Cerrar', style: 'cancel' }
                         ]
                       );
                     } catch (e) {
-                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                      const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                      Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar.'));
                     }
                   }}
                 >
@@ -1152,7 +1180,7 @@ export default function GestosScreen() {
                   <Text style={styles.modalCrearTareaBackText}>Contactos</Text>
                 </TouchableOpacity>
               ) : (
-                <Text style={styles.modalCrearTareaTitle}>¿Para quién es el gesto?</Text>
+                <Text style={styles.modalCrearTareaTitle}>¿Quieres agregar un Gesto?</Text>
               )}
               <TouchableOpacity onPress={cerrarModalCrearTarea}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
@@ -1161,7 +1189,7 @@ export default function GestosScreen() {
 
             {pasoCrearTarea === 'contacto' && (
               <View style={styles.modalCrearTareaBody}>
-                <Text style={styles.modalCrearTareaSubtitle}>Elige un contacto de tu lista</Text>
+                <Text style={styles.modalCrearTareaSubtitle}>Elige a esa persona especial.</Text>
                 {contactos.length === 0 ? (
                   <View style={styles.modalCrearTareaEmpty}>
                     <Ionicons name="people-outline" size={48} color={COLORES.textoSuave} />
@@ -1169,34 +1197,33 @@ export default function GestosScreen() {
                     <Text style={styles.modalCrearTareaEmptyHint}>Añade contactos desde la pestaña Vínculos.</Text>
                   </View>
                 ) : (
-                  <FlatList
-                    data={contactos}
-                    keyExtractor={(c) => c._id}
+                  <ScrollView
                     style={styles.modalCrearTareaList}
-                    contentContainerStyle={styles.modalCrearTareaListContent}
-                    renderItem={({ item }) => (
+                    contentContainerStyle={styles.modalCrearTareaBurbujasContent}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    {contactos.map((item) => (
                       <TouchableOpacity
-                        style={styles.modalCrearTareaContactoRow}
+                        key={item._id}
+                        style={styles.modalCrearTareaBurbujaWrap}
                         onPress={() => seleccionarContactoParaTarea(item)}
-                        activeOpacity={0.7}
+                        activeOpacity={0.8}
                       >
-                        {item.foto && item.foto.length > 20 ? (
-                          <Image source={{ uri: item.foto }} style={styles.modalCrearTareaAvatar} />
-                        ) : (
-                          <View style={styles.modalCrearTareaAvatarPlaceholder}>
-                            <Ionicons name="person" size={24} color={COLORES.textoSecundario} />
-                          </View>
-                        )}
-                        <View style={styles.modalCrearTareaContactoInfo}>
-                          <Text style={styles.modalCrearTareaContactoNombre}>{item.nombre}</Text>
-                          {item.telefono ? (
-                            <Text style={styles.modalCrearTareaContactoTelefono}>{item.telefono}</Text>
-                          ) : null}
+                        <View style={styles.modalCrearTareaBurbuja}>
+                          {item.foto && item.foto.length > 20 ? (
+                            <Image source={{ uri: item.foto }} style={styles.modalCrearTareaBurbujaImagen} />
+                          ) : (
+                            <View style={styles.modalCrearTareaBurbujaInicial}>
+                              <Text style={styles.modalCrearTareaBurbujaInicialText} numberOfLines={1}>
+                                {(item.nombre || '?').trim().charAt(0).toUpperCase()}
+                              </Text>
+                            </View>
+                          )}
                         </View>
-                        <Ionicons name="chevron-forward" size={20} color={COLORES.textoSuave} />
+                        <Text style={styles.modalCrearTareaBurbujaNombre} numberOfLines={1}>{item.nombre || 'Sin nombre'}</Text>
                       </TouchableOpacity>
-                    )}
-                  />
+                    ))}
+                  </ScrollView>
                 )}
               </View>
             )}
@@ -2029,6 +2056,55 @@ const styles = StyleSheet.create({
   modalCrearTareaListContent: {
     paddingHorizontal: 20,
     paddingBottom: 24,
+  },
+  modalCrearTareaBurbujasContent: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 24,
+    justifyContent: 'flex-start',
+    gap: 16,
+  },
+  modalCrearTareaBurbujaWrap: {
+    width: Math.floor((Dimensions.get('window').width - 20 * 2 - 16 * 3) / 3),
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  modalCrearTareaBurbuja: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    overflow: 'hidden',
+    backgroundColor: COLORES.fondoSecundario,
+    borderWidth: 2,
+    borderColor: COLORES.agua,
+  },
+  modalCrearTareaBurbujaImagen: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+  },
+  modalCrearTareaBurbujaInicial: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: COLORES.aguaClaro || '#E1F5FE',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalCrearTareaBurbujaInicialText: {
+    fontSize: 32,
+    fontWeight: '700',
+    color: COLORES.agua,
+  },
+  modalCrearTareaBurbujaNombre: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORES.texto,
+    marginTop: 8,
+    textAlign: 'center',
+    maxWidth: '100%',
   },
   modalCrearTareaContactoRow: {
     flexDirection: 'row',

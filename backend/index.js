@@ -1067,17 +1067,33 @@ app.put('/api/contacto/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// DELETE - Eliminar contacto
+// DELETE - Eliminar contacto por ID (usado por la app móvil)
+app.delete('/api/contacto/:id', authenticateToken, async (req, res) => {
+  try {
+    const contactoId = req.params.id;
+    const eliminado = await Contacto.findOneAndDelete({
+      _id: contactoId,
+      usuarioId: req.user.id
+    });
+    if (!eliminado) {
+      return res.status(404).json({ error: 'Contacto no encontrado' });
+    }
+    res.json({ message: 'Contacto eliminado', contacto: eliminado });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// DELETE - Eliminar contacto por teléfono (body)
 app.delete('/api/contacto', authenticateToken, async (req, res) => {
   try {
     const { telefono } = req.body;
     if (!telefono) {
       return res.status(400).json({ error: 'Teléfono requerido' });
     }
-    // Solo eliminar si el contacto pertenece al usuario autenticado
-    const eliminado = await Contacto.findOneAndDelete({ 
-      telefono, 
-      usuarioId: req.user.id 
+    const eliminado = await Contacto.findOneAndDelete({
+      telefono,
+      usuarioId: req.user.id
     });
     if (!eliminado) {
       return res.status(404).json({ error: 'Contacto no encontrado' });

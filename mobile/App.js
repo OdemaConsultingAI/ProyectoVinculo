@@ -4,7 +4,6 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import * as Notifications from 'expo-notifications';
 
 import VinculosScreen from './screens/VinculosScreen';
 import GestosScreen from './screens/GestosScreen';
@@ -16,7 +15,7 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import { isAuthenticated } from './services/authService';
-import { registerAndSendPushToken } from './services/pushNotificationService';
+import { registerAndSendPushToken, addNotificationResponseListener } from './services/pushNotificationService';
 
 const Tab = createBottomTabNavigator();
 
@@ -39,7 +38,7 @@ export default function App() {
   // Etapa 4 push: al tocar una notificación, navegar a la pantalla según data.tipo
   useEffect(() => {
     if (!authenticated || showSplash) return;
-    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+    const remove = addNotificationResponseListener((response) => {
       const data = response?.notification?.request?.content?.data || {};
       const tipo = data.tipo || data.type;
       const nav = navigationRef.current;
@@ -54,7 +53,7 @@ export default function App() {
         nav.navigate('Vínculos');
       }
     });
-    return () => sub.remove();
+    return remove;
   }, [authenticated, showSplash]);
 
   const checkAuth = async () => {

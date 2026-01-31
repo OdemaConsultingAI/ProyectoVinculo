@@ -121,3 +121,16 @@ export const sanitizeText = (text) => {
   if (!text) return '';
   return text.trim().replace(/[<>]/g, '');
 };
+
+/**
+ * Normaliza un string para comparación (minúsculas, sin acentos).
+ * Útil para emparejar nombres de contacto "Simón García" vs "Simon Garcia".
+ */
+export function normalizeForMatch(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .toLowerCase()
+    .trim()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '');
+}

@@ -32,6 +32,7 @@ import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   loadContacts, 
+  loadContactsFromCache,
   createContact, 
   updateContact, 
   deleteContact,
@@ -1248,12 +1249,14 @@ export default function VinculosScreen() {
           style: "destructive",
           onPress: async () => {
             try {
-              // Usar el teléfono original (sin limpiar) para eliminar del servidor
+              const idAEliminar = datosEditados._id;
               const telefonoAEliminar = datosEditados.telefonoOriginal || limpiarTelefonoVisual(datosEditados.telefono);
               const eliminado = await borrarDelServidor(telefonoAEliminar);
               if (eliminado) {
                 setModalVisible(false);
-                cargarVinculos();
+                setVinculos(prev => prev.filter(c => c._id !== idAEliminar));
+                const pendingCount = await getPendingSyncCount();
+                setPendingSyncCount(pendingCount);
                 Alert.alert("Éxito", "Contacto eliminado correctamente");
               } else {
                 Alert.alert("Error", "No se pudo eliminar el contacto");
@@ -3583,7 +3586,7 @@ export default function VinculosScreen() {
           </SafeAreaView>
         </Modal>
 
-        {/* Modal Regar: elegir contacto → agregar interacción */}
+        {/* Modal Agregar un Momento: elegir contacto → agregar momento */}
         <Modal
           visible={modalRegarVisible}
           animationType="slide"
@@ -3599,7 +3602,7 @@ export default function VinculosScreen() {
                     <Text style={styles.modalRegarBackText}>Contactos</Text>
                   </TouchableOpacity>
                 ) : (
-                  <Text style={styles.modalRegarTitle}>Regar un contacto</Text>
+                  <Text style={styles.modalRegarTitle}>¿Quieres agregar un Momento?</Text>
                 )}
                 <TouchableOpacity onPress={cerrarModalRegar}>
                   <Ionicons name="close" size={24} color={COLORES.texto} />
@@ -3608,42 +3611,41 @@ export default function VinculosScreen() {
 
               {pasoRegar === 'contacto' && (
                 <View style={styles.modalRegarBody}>
-                  <Text style={styles.modalRegarSubtitle}>¿A quién quieres regar? Elige un contacto para agregar un momento.</Text>
+                  <Text style={styles.modalRegarSubtitle}>Elige con quién compartiste un momento especial.</Text>
                   {vinculos.length === 0 ? (
                     <View style={styles.modalRegarEmpty}>
                       <Ionicons name="people-outline" size={48} color={COLORES.textoSuave} />
                       <Text style={styles.modalRegarEmptyText}>No hay contactos</Text>
-                      <Text style={styles.modalRegarEmptyHint}>Importa contactos para poder regarlos.</Text>
+                      <Text style={styles.modalRegarEmptyHint}>Añade contactos para compartir momentos con ellos.</Text>
                     </View>
                   ) : (
-                    <FlatList
-                      data={vinculos}
-                      keyExtractor={(c) => c._id || c.telefono}
+                    <ScrollView
                       style={styles.modalRegarList}
-                      contentContainerStyle={styles.modalRegarListContent}
-                      renderItem={({ item }) => (
-                        <TouchableOpacity
-                          style={styles.modalRegarContactoRow}
-                          onPress={() => seleccionarContactoParaRegar(item)}
-                          activeOpacity={0.7}
-                        >
-                          {item.foto && item.foto.length > 20 ? (
-                            <Image source={{ uri: item.foto }} style={styles.modalRegarAvatar} />
-                          ) : (
-                            <View style={styles.modalRegarAvatarPlaceholder}>
-                              <Ionicons name="person" size={24} color={COLORES.textoSecundario} />
+                      contentContainerStyle={styles.modalRegarBurbujasContent}
+                      showsVerticalScrollIndicator={false}
+                    >
+                      <View style={styles.modalRegarBurbujasGrid}>
+                        {vinculos.map((item) => (
+                          <TouchableOpacity
+                            key={item._id || item.telefono}
+                            style={styles.modalRegarBurbujaWrap}
+                            onPress={() => seleccionarContactoParaRegar(item)}
+                            activeOpacity={0.8}
+                          >
+                            <View style={styles.modalRegarBurbujaCircle}>
+                              {item.foto && item.foto.length > 20 ? (
+                                <Image source={{ uri: item.foto }} style={styles.modalRegarBurbujaImagen} />
+                              ) : (
+                                <View style={styles.modalRegarBurbujaInicial}>
+                                  <Ionicons name="person" size={28} color={COLORES.textoSecundario} />
+                                </View>
+                              )}
                             </View>
-                          )}
-                          <View style={styles.modalRegarContactoInfo}>
-                            <Text style={styles.modalRegarContactoNombre}>{item.nombre}</Text>
-                            {item.telefono ? (
-                              <Text style={styles.modalRegarContactoTelefono}>{item.telefono}</Text>
-                            ) : null}
-                          </View>
-                          <Ionicons name="chevron-forward" size={20} color={COLORES.textoSuave} />
-                        </TouchableOpacity>
-                      )}
-                    />
+                            <Text style={styles.modalRegarBurbujaNombre} numberOfLines={1}>{item.nombre}</Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </ScrollView>
                   )}
                 </View>
               )}
@@ -5964,6 +5966,57 @@ const styles = StyleSheet.create({
   modalRegarListContent: {
     paddingHorizontal: 20,
     paddingBottom: 24,
+  },
+  modalRegarBurbujasContent: {
+    paddingHorizontal: 16,
+    paddingBottom: 24,
+  },
+  modalRegarBurbujasGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    gap: 20,
+  },
+  modalRegarBurbujaWrap: {
+    width: 88,
+    alignItems: 'center',
+  },
+  modalRegarBurbujaCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: COLORES.burbujaFondo || '#fff',
+    justifyContent: 'center',
+    alignItems: 'center',
+    overflow: 'hidden',
+    borderWidth: 2,
+    borderColor: COLORES.agua,
+    shadowColor: COLORES.sombra,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalRegarBurbujaImagen: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 36,
+  },
+  modalRegarBurbujaInicial: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 36,
+    backgroundColor: COLORES.fondoSecundario,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  modalRegarBurbujaNombre: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: COLORES.texto,
+    marginTop: 8,
+    textAlign: 'center',
+    maxWidth: 88,
   },
   modalRegarContactoRow: {
     flexDirection: 'row',

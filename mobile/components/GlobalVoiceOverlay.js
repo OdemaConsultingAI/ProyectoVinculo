@@ -18,6 +18,7 @@ import { COLORES } from '../constants/colores';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { startRecording, stopRecording, playPreviewUri, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import { loadContacts, saveInteractionFromVoice, saveTaskFromVoice } from '../services/syncService';
+import { normalizeForMatch } from '../utils/validations';
 
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
 
@@ -383,13 +384,35 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       voicePreviewData.tipo === 'tarea' && styles.modalVoicePreviewButtonSuggested,
                     ]}
                     onPress={async () => {
-                      if (!voicePreviewData?.contactoId || !voicePreviewTempId) {
-                        Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
+                      if (!voicePreviewTempId) {
+                        Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
                         return;
                       }
-                      const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
+                      let contactoId = voicePreviewData?.contactoId ?? voicePreviewContactoFromModal?.id;
+                      let lista = vinculos;
+                      if (!contactoId && voicePreviewData?.contactoNombre && Array.isArray(lista)) {
+                        const porNombre = lista.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                        if (porNombre?._id) contactoId = porNombre._id;
+                      }
+                      if (!contactoId && voicePreviewData?.contactoNombre) {
+                        try {
+                          const res = await loadContacts();
+                          lista = Array.isArray(res?.contactos) ? res.contactos : [];
+                          setVinculos(lista);
+                          const porNombre = lista.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                          if (porNombre?._id) contactoId = porNombre._id;
+                        } catch (_) {}
+                      }
+                      if (!contactoId) {
+                        const nombre = voicePreviewData?.contactoNombre || voicePreviewData?.vinculo || '';
+                        Alert.alert('Aviso', nombre
+                          ? `No se pudo asignar el contacto. Comprueba que "${nombre}" está en tu lista de vínculos con ese nombre.`
+                          : 'No hay contacto asignado. La transcripción no identificó a nadie; abre un contacto antes de grabar o menciona el nombre en la nota.');
+                        return;
+                      }
+                      const contact = lista.find(c => c._id === contactoId) || vinculos.find(c => c._id === contactoId);
                       if (!contact) {
-                        Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
+                        Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista de vínculos (arrastra para actualizar).');
                         return;
                       }
                       try {
@@ -398,10 +421,10 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                           Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
                           return;
                         }
-                        const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
+                        const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData?.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
                         let fechaEjecucion = voicePreviewFechaEjecucion && !isNaN(voicePreviewFechaEjecucion.getTime()) ? voicePreviewFechaEjecucion : new Date();
                         if (fechaEjecucion.getTime() < Date.now()) fechaEjecucion = new Date();
-                        await saveTaskFromVoice(voicePreviewData.contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
+                        await saveTaskFromVoice(contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
                         if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                         closeVoicePreview();
                         navigationRef?.current?.navigate('Gestos', { refreshGestos: true });
@@ -414,7 +437,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                           ]
                         );
                       } catch (e) {
-                        Alert.alert('Error', e.message || 'No se pudo guardar.');
+                        const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                        Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar.'));
                       }
                     }}
                   >
@@ -424,13 +448,35 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                   <TouchableOpacity
                     style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
                     onPress={async () => {
-                      if (!voicePreviewData?.contactoId || !voicePreviewTempId) {
-                        Alert.alert('Aviso', 'No hay contacto asignado o nota temporal. Añade contactos y graba de nuevo.');
+                      if (!voicePreviewTempId) {
+                        Alert.alert('Error', 'Error de conexión. No se pudo subir la nota. Comprueba tu internet e intenta de nuevo.');
                         return;
                       }
-                      const contact = vinculos.find(c => c._id === voicePreviewData.contactoId);
+                      let contactoId = voicePreviewData?.contactoId ?? voicePreviewContactoFromModal?.id;
+                      let lista = vinculos;
+                      if (!contactoId && voicePreviewData?.contactoNombre && Array.isArray(lista)) {
+                        const porNombre = lista.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                        if (porNombre?._id) contactoId = porNombre._id;
+                      }
+                      if (!contactoId && voicePreviewData?.contactoNombre) {
+                        try {
+                          const res = await loadContacts();
+                          lista = Array.isArray(res?.contactos) ? res.contactos : [];
+                          setVinculos(lista);
+                          const porNombre = lista.find(c => normalizeForMatch(c.nombre) === normalizeForMatch(voicePreviewData.contactoNombre));
+                          if (porNombre?._id) contactoId = porNombre._id;
+                        } catch (_) {}
+                      }
+                      if (!contactoId) {
+                        const nombre = voicePreviewData?.contactoNombre || voicePreviewData?.vinculo || '';
+                        Alert.alert('Aviso', nombre
+                          ? `No se pudo asignar el contacto. Comprueba que "${nombre}" está en tu lista de vínculos con ese nombre.`
+                          : 'No hay contacto asignado. La transcripción no identificó a nadie; abre un contacto antes de grabar o menciona el nombre en la nota.');
+                        return;
+                      }
+                      const contact = lista.find(c => c._id === contactoId) || vinculos.find(c => c._id === contactoId);
                       if (!contact) {
-                        Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista.');
+                        Alert.alert('Error', 'Contacto no encontrado. Actualiza la lista de vínculos (arrastra para actualizar).');
                         return;
                       }
                       try {
@@ -439,19 +485,20 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                           Alert.alert('Aviso', 'No hay texto para guardar. Asegúrate de que la transcripción se completó.');
                           return;
                         }
-                        const { contacto } = await saveInteractionFromVoice(voicePreviewData.contactoId, voicePreviewTempId, textoTranscripcion);
+                        const { contacto } = await saveInteractionFromVoice(contactoId, voicePreviewTempId, textoTranscripcion);
                         if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                         closeVoicePreview();
                         Alert.alert(
                           'Momento guardado',
                           'Se guardó como texto. Toca "Ver momentos" para verlo.',
                           [
-                            { text: 'Ver momentos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: voicePreviewData.contactoId, openContact: contacto }) },
+                            { text: 'Ver momentos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: contactoId, openContact: contacto }) },
                             { text: 'Cerrar', style: 'cancel' }
                           ]
                         );
                       } catch (e) {
-                        Alert.alert('Error', e.message || 'No se pudo guardar.');
+                        const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
+                        Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar.'));
                       }
                     }}
                   >

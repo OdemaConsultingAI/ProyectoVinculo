@@ -1,35 +1,30 @@
 /**
  * Notificaciones push – permisos, token Expo y envío al backend.
- * En Expo Go (Android SDK 53+) las push remotas no están disponibles; usar development build.
+ * En Expo Go (Android SDK 53+) las push remotas no están disponibles; no cargamos expo-notifications para evitar el error.
  */
 
 import { Platform } from 'react-native';
-import * as Device from 'expo-device';
-import * as Notifications from 'expo-notifications';
 import Constants from 'expo-constants';
+import * as Device from 'expo-device';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL, fetchWithAuth } from '../constants/api';
 
 const STORAGE_KEY = '@vinculos_expo_push_token';
 
-/** True si estamos en Expo Go (push remotas no disponibles en Android SDK 53+). */
-function isExpoGo() {
-  return Constants.appOwnership === 'expo';
-}
+/** True si estamos en Expo Go + Android (SDK 53+ eliminó push remotas; no cargar expo-notifications). */
+const isExpoGoAndroid = Constants.appOwnership === 'expo' && Platform.OS === 'android';
 
-// Comportamiento cuando la app está en primer plano (en Expo Go Android no hay push remotas)
-try {
-  if (!isExpoGo() || Platform.OS !== 'android') {
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: true,
-      }),
-    });
-  }
-} catch (_) {
-  // Ignorar si expo-notifications no está disponible (p. ej. Expo Go Android SDK 53+)
+// Solo cargar expo-notifications cuando NO sea Expo Go en Android (evita el error al importar)
+let Notifications = null;
+if (!isExpoGoAndroid) {
+  Notifications = require('expo-notifications');
+  Notifications.setNotificationHandler({
+    handleNotification: async () => ({
+      shouldShowAlert: true,
+      shouldPlaySound: true,
+      shouldSetBadge: true,
+    }),
+  });
 }
 
 /**
@@ -38,11 +33,7 @@ try {
  * @returns { Promise<string|null> } Token o null si no hay permiso o no es dispositivo físico.
  */
 export async function registerForPushNotificationsAsync() {
-  if (!Device.isDevice) {
-    return null;
-  }
-  // En Expo Go (Android SDK 53+) las push remotas fueron eliminadas; usar development build.
-  if (isExpoGo() && Platform.OS === 'android') {
+  if (!Device.isDevice || !Notifications) {
     return null;
   }
 
@@ -99,7 +90,7 @@ export async function getStoredExpoPushToken() {
  * @returns { Promise<boolean> }
  */
 export async function hasNotificationPermission() {
-  if (isExpoGo() && Platform.OS === 'android') return false;
+  if (!Notifications) return false;
   try {
     const { status } = await Notifications.getPermissionsAsync();
     return status === 'granted';
@@ -140,4 +131,16 @@ export async function registerAndSendPushToken() {
     await sendPushTokenToBackend(token);
   }
   return token;
+}
+
+/**
+ * Añade listener para cuando el usuario toca una notificación (navegación).
+ * En Expo Go Android no hay push; devuelve una función no-op para desuscribir.
+ * @param { (response: object) => void } callback
+ * @returns { () => void } Función para eliminar el listener.
+ */
+export function addNotificationResponseListener(callback) {
+  if (!Notifications) return () => {};
+  const subscription = Notifications.addNotificationResponseReceivedListener(callback);
+  return () => subscription.remove();
 }
