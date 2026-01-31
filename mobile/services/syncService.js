@@ -529,13 +529,28 @@ export const saveInteractionFromVoice = async (contactoId, tempId, texto = '') =
       if (msg && typeof msg === 'string' && msg.includes('Contacto no encontrado')) {
         throw new Error('Contacto no encontrado. Comprueba que sigue en tu lista de vínculos.');
       }
-      throw new Error('Ruta no encontrada (404). Despliega el backend en Render con los últimos cambios (voz / Mi Refugio).');
+      checkApiVersionOn404();
+      throw new Error(is404RutaInexistente(msg, data) ? MSG_404_BACKEND_DESACTUALIZADO : MSG_404_BACKEND_DESACTUALIZADO);
     }
     throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el momento.');
   }
 };
 
 const REFUGIO_URL = `${API_BASE_URL}/api/refugio`;
+
+/** Mensaje cuando el 404 es por backend desactualizado (rutas de voz/refugio no desplegadas). */
+const MSG_404_BACKEND_DESACTUALIZADO = 'El servidor en la nube no tiene las rutas de guardado. Sube el código a GitHub (git push) y en el panel de Render haz "Manual Deploy" para actualizar el backend.';
+
+/** True si el 404 parece ser "ruta inexistente" (no "nota no encontrada" ni "contacto no encontrado"). */
+const is404RutaInexistente = (msg, data) => {
+  const s = typeof msg === 'string' ? msg : '';
+  const raw = (data && typeof data.error === 'string') ? data.error : '';
+  if (s.includes('no encontrada') && s.includes('nota')) return false;
+  if (s.includes('borrada')) return false;
+  if (s.includes('Contacto no encontrado')) return false;
+  if (s.includes('Not Found') || s.includes('Cannot POST') || s.includes('Error 404') || raw.includes('<')) return true;
+  return false;
+};
 
 /** Diagnóstico: comprobar si el backend tiene rutas de voz/refugio (al recibir 404). */
 const checkApiVersionOn404 = async () => {
@@ -661,7 +676,7 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
       if (msg && typeof msg === 'string' && msg.includes('Contacto no encontrado')) {
         throw new Error('Contacto no encontrado. Comprueba que sigue en tu lista de vínculos.');
       }
-      throw new Error('Ruta no encontrada (404). Despliega el backend en Render con los últimos cambios (voz / Mi Refugio).');
+      throw new Error(MSG_404_BACKEND_DESACTUALIZADO);
     }
     throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el gesto.');
   }
