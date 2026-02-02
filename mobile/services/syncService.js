@@ -731,13 +731,13 @@ export const clearDesahogos = async () => {
   return { success: true };
 };
 
-/** Borrar un desahogo por ID (Mi Refugio). */
+/** Borrar un desahogo por ID (Mi Refugio). Usa POST para evitar 404 en Render/proxies que bloquean DELETE. */
 export const deleteDesahogo = async (id) => {
   if (!isOnline) throw new Error('Necesitas conexión para borrar.');
   const idStr = id != null ? String(id).trim() : '';
   if (!idStr) throw new Error('ID de desahogo no válido.');
-  const url = `${REFUGIO_URL}/desahogos/${encodeURIComponent(idStr)}`;
-  await fetchWithAuth(url, { method: 'DELETE' });
+  const url = `${REFUGIO_URL}/desahogos/${encodeURIComponent(idStr)}/delete`;
+  await fetchWithAuth(url, { method: 'POST' });
   return { success: true };
 };
 
