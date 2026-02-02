@@ -1,0 +1,16 @@
+# Al ejecutar "eas build" desde la raíz, excluir todo lo que no sea mobile
+# para evitar fallos de tar en el servidor (strip-components / permisos / rutas).
+
+backend/
+documentos/
+.github/
+*.ps1
+*.md
+.cursor/
+.cursorignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+node_modules/
+package-lock.json

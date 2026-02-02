@@ -512,8 +512,9 @@ export const saveInteractionFromVoice = async (contactoId, tempId, texto = '') =
     });
     const savedContact = await response.json();
     const cachedContacts = await loadContactsFromCache();
+    const idStr = String(contactoId);
     const finalContacts = cachedContacts.map(c =>
-      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+      String(c._id) === idStr ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
     );
     await saveContactsToCache(finalContacts);
     return { success: true, contacto: savedContact };
@@ -727,8 +728,9 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
     });
     const savedContact = await response.json();
     const cachedContacts = await loadContactsFromCache();
+    const idStr = String(contactoId);
     const finalContacts = cachedContacts.map(c =>
-      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+      String(c._id) === idStr ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
     );
     await saveContactsToCache(finalContacts);
     return { success: true, contacto: savedContact };

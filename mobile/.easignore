@@ -1,6 +1,5 @@
 # EAS Build: excluir archivos que no necesita el build
-# Evita subir docs y archivos que puedan causar problemas en el servidor
-*.md
+# Evita subir docs y archivos que puedan causar problemas en el servidor (tar en Linux)
 .git/
 node_modules/
 .expo/
@@ -8,3 +7,12 @@ dist/
 web-build/
 *.log
 .env*.local
+# IDE y sistema (evitar rutas o caracteres que rompan tar)
+.cursor/
+.cursorignore
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+# Docs (opcional, reduce tamaño)
+*.md

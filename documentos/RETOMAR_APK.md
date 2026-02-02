@@ -58,6 +58,20 @@ Si vuelve a fallar en "Prepare project", revisa los **logs** del build en expo.d
 
 ---
 
+## Error "tar ... exited with non-zero code 2"
+
+Si el build falla en la fase de **Prepare project** con:
+
+`tar -C /home/expo/workingdir/build --strip-components 1 -zxf /home/expo/workingdir/project.tar.gz exited with non-zero code: 2`
+
+suele deberse a que EAS empaqueta todo el repo (incluyendo `backend/`, documentos, etc.) y al extraer el tarball en el servidor Linux algo falla (permisos, rutas o estructura). **Solución recomendada:**
+
+1. **Usar la Opción A** (script `.\eas-build-solo-mobile.ps1` desde la raíz): empaqueta solo la carpeta `mobile` y evita el monorepo.
+2. **O** ejecutar el build **desde la carpeta mobile**: `cd C:\DEV\ProyectoVinculo\mobile` y luego `eas build --platform android --profile preview`.
+3. En la **raíz del repo** hay un `.easignore` que excluye `backend/`, `documentos/`, `.github/`, IDE, etc., para que si lanzas EAS desde la raíz el tarball sea más pequeño y estable.
+
+---
+
 ## Si el build vuelve a fallar
 
 1. **Ver el error real:** EAS solo muestra "Gradle build failed with unknown error". Para ver el motivo:

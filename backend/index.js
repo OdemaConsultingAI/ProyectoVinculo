@@ -1139,12 +1139,16 @@ app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async 
       descripcion: texto,
       ...(emocion && { emocion })
     };
-    contacto.interacciones = contacto.interacciones || [];
-    contacto.interacciones.push(nuevaInteraccion);
-    contacto.markModified('interacciones');
-    await contacto.save();
+    const actualizado = await Contacto.findByIdAndUpdate(
+      contactoId,
+      { $push: { interacciones: nuevaInteraccion } },
+      { new: true, runValidators: true }
+    );
+    if (!actualizado) {
+      return res.status(404).json({ error: 'Contacto no encontrado.' });
+    }
     await VoiceNoteTemp.deleteOne({ _id: doc._id });
-    res.json(contacto);
+    res.json(actualizado);
   } catch (error) {
     console.error('Error en from-voice interacción:', error?.message);
     next(error);
@@ -1205,7 +1209,6 @@ app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, r
     }
     const fechaEjecucion = req.body.fechaHoraEjecucion ? new Date(req.body.fechaHoraEjecucion) : new Date();
     const clasificacion = req.body.clasificacion && TIPOS_DE_GESTO_DISPLAY.includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
-    // Solo descripcion (transcripción en texto). NUNCA usar doc.audioBase64 ni guardar audio.
     const nuevaTarea = {
       fechaHoraCreacion: new Date(),
       descripcion: texto,
@@ -1213,12 +1216,16 @@ app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, r
       clasificacion,
       completada: false
     };
-    contacto.tareas = contacto.tareas || [];
-    contacto.tareas.push(nuevaTarea);
-    contacto.markModified('tareas');
-    await contacto.save();
+    const actualizado = await Contacto.findByIdAndUpdate(
+      contactoId,
+      { $push: { tareas: nuevaTarea } },
+      { new: true, runValidators: true }
+    );
+    if (!actualizado) {
+      return res.status(404).json({ error: 'Contacto no encontrado.' });
+    }
     await VoiceNoteTemp.deleteOne({ _id: doc._id });
-    res.json(contacto);
+    res.json(actualizado);
   } catch (error) {
     console.error('Error en from-voice tarea:', error?.message);
     next(error);

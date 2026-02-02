@@ -21,6 +21,7 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
+      "label": "Vinculo",
       "edgeToEdgeEnabled": true,
       "usesCleartextTraffic": true,
       "networkSecurityConfig": {

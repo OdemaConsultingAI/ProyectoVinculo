@@ -95,6 +95,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
   const insets = useSafeAreaInsets();
   const bottomInset = Math.max(insets.bottom, 8) + TAB_BAR_OFFSET;
   const topInset = Math.max(insets.top, 0);
+  /** Padding inferior en modales para no quedar ocultos bajo la barra de navegación del teléfono (en Modal los insets suelen ser 0 en Android). */
+  const modalBottomPadding = Math.max(insets.bottom, 48);
 
   // Timer de grabación
   useEffect(() => {
@@ -440,7 +442,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
         transparent
         onRequestClose={() => setModalModoVisible(false)}
       >
-        <Pressable style={styles.modalOverlay} onPress={() => setModalModoVisible(false)}>
+        <Pressable style={[styles.modalOverlay, { paddingBottom: modalBottomPadding }]} onPress={() => setModalModoVisible(false)}>
           <View style={[styles.modalVoicePreviewContent, { maxHeight: 320 }]} onStartShouldSetResponder={() => true}>
             <View style={styles.modalVoicePreviewHeader}>
               <Text style={styles.modalVoicePreviewTitle}>
@@ -482,7 +484,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
         transparent
         onRequestClose={() => {}}
       >
-        <View style={[styles.modalOverlay, { justifyContent: 'center' }]}>
+        <View style={[styles.modalOverlay, { justifyContent: 'center', paddingTop: topInset, paddingBottom: modalBottomPadding }]}>
           <View style={styles.modalGrabacionContent}>
             <Text style={styles.modalGrabacionTitle}>
               {voiceSelectedTipo === 'gesto' ? 'Huella' : voiceSelectedTipo === 'momento' ? 'Atención' : 'Desahogo'}
@@ -529,7 +531,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
         transparent
         onRequestClose={closeVoicePreview}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: modalBottomPadding }]}>
           <View style={styles.modalVoicePreviewContent}>
             <View style={styles.modalVoicePreviewHeader}>
               <Text style={styles.modalVoicePreviewTitle}>{voicePreviewData ? 'Preview de la nota' : 'Nota grabada'}</Text>
@@ -672,7 +674,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     }
                     const contactoId = getVoicePreviewContactoId();
                     if (!contactoId) {
-                      Alert.alert('Elige un contacto', 'Selecciona con quién es esta huella en la lista de arriba.');
+                      Alert.alert('Elige un contacto', 'Selecciona con quién es esta atención en la lista de arriba.');
                       return;
                     }
                     const textoTranscripcion = (voicePreviewEditedText || voicePreviewTranscription || '').trim();
@@ -688,8 +690,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       closeVoicePreview();
                       navigationRef?.current?.navigate('Atenciones', { refreshGestos: true });
-                      Alert.alert('Atención guardada', 'Tu atención se guardó correctamente.', [
-                        { text: 'Ver atenciones', onPress: () => navigationRef?.current?.navigate('Atenciones', { refreshGestos: true }) },
+                      Alert.alert('Atención guardada', 'Tu atención se guardó correctamente. Aparecerá en Atenciones.', [
+                        { text: 'Ver Atenciones', onPress: () => navigationRef?.current?.navigate('Atenciones', { refreshGestos: true }) },
                         { text: 'Cerrar', style: 'cancel' },
                       ]);
                     } catch (e) {
@@ -712,7 +714,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     }
                     const contactoId = getVoicePreviewContactoId();
                     if (!contactoId) {
-                      Alert.alert('Elige un contacto', 'Selecciona con quién es este momento en la lista de arriba.');
+                      Alert.alert('Elige un contacto', 'Selecciona con quién es esta huella (momento) en la lista de arriba.');
                       return;
                     }
                     const textoTranscripcion = (voicePreviewEditedText || voicePreviewTranscription || '').trim();
@@ -724,7 +726,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       const { contacto } = await saveInteractionFromVoice(contactoId, voicePreviewTempId, textoTranscripcion);
                       if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
                       closeVoicePreview();
-                      Alert.alert('Momento guardado', 'Se guardó como huella (momento).', [
+                      Alert.alert('Momento guardado', 'Tu momento se guardó. Aparecerá en Huellas.', [
                         { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
                         { text: 'Ver en Vínculos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: contactoId, openContact: contacto }) },
                         { text: 'Cerrar', style: 'cancel' },
@@ -760,7 +762,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
           setShowDatePickerWrite(false);
         }}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: modalBottomPadding }]}>
           <View style={styles.modalVoicePreviewContent}>
             <View style={styles.modalVoicePreviewHeader}>
               <Text style={styles.modalVoicePreviewTitle}>
@@ -889,7 +891,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       setVoiceWriteText('');
                       setVoiceWriteContactoId(null);
                       navigationRef?.current?.navigate('Mi Refugio', { refreshDesahogos: true });
-                      Alert.alert('Guardado en Mi Refugio', 'Tu desahogo se guardó. Solo tú puedes verlo.', [
+                      Alert.alert('Desahogo guardado', 'Tu desahogo se guardó en Mi Refugio. Solo tú puedes verlo.', [
                         { text: 'Ver Mi Refugio', onPress: () => navigationRef?.current?.navigate('Mi Refugio', { refreshDesahogos: true }) },
                         { text: 'Cerrar', style: 'cancel' },
                       ]);
@@ -901,8 +903,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       setVoiceWriteContactoId(null);
                       setVoiceWriteFecha(new Date());
                       navigationRef?.current?.navigate('Atenciones', { refreshGestos: true });
-                      Alert.alert('Atención guardada', 'Tu atención se guardó correctamente.', [
-                        { text: 'Ver atenciones', onPress: () => navigationRef?.current?.navigate('Atenciones', { refreshGestos: true }) },
+                      Alert.alert('Atención guardada', 'Tu atención se guardó correctamente. Aparecerá en Atenciones.', [
+                        { text: 'Ver Atenciones', onPress: () => navigationRef?.current?.navigate('Atenciones', { refreshGestos: true }) },
                         { text: 'Cerrar', style: 'cancel' },
                       ]);
                     } else if (voiceSelectedTipo === 'momento') {
@@ -912,7 +914,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       setVoiceWriteText('');
                       setVoiceWriteContactoId(null);
                       setVoiceWriteFecha(new Date());
-                      Alert.alert('Momento guardado', 'Se guardó como huella (momento).', [
+                      Alert.alert('Momento guardado', 'Tu momento se guardó. Aparecerá en Huellas.', [
                         { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
                         { text: 'Ver en Vínculos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: voiceWriteContactoId }) },
                         { text: 'Cerrar', style: 'cancel' },

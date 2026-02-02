@@ -12,12 +12,14 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk"
-      }
+      },
+      "prebuildCommand": "npx expo prebuild --clean --platform android"
     },
     "production": {
       "android": {
         "buildType": "apk"
-      }
+      },
+      "prebuildCommand": "npx expo prebuild --clean --platform android"
     }
   },
   "submit": {
