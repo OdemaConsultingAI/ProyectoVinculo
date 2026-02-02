@@ -28,7 +28,6 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
-import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { 
   loadContacts, 
@@ -47,16 +46,23 @@ import {
 } from '../services/syncService';
 import NetInfo from '@react-native-community/netinfo';
 import { validatePhone, validateBirthday, validateName, sanitizeText } from '../utils/validations';
+import { formatTime12h } from '../utils/dateTime';
 import { playFromBase64, startRecording } from '../services/voiceToTaskService';
+import HuellasModalContacto from '../components/HuellasModalContacto';
+import AtencionesModalContacto from '../components/AtencionesModalContacto';
 import { useVoiceGlobal } from '../context/VoiceGlobalContext';
+import AyudaContext from '../context/AyudaContext';
 import NotificationBell from '../components/NotificationBell';
-import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
 
-const getGestoConfig = (clasificacion) => GESTO_ICON_CONFIG[clasificacion] || GESTO_ICON_CONFIG['Otro'];
-
+const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
-const BUBBLE_SIZE = Math.max(100, (SCREEN_WIDTH - 60) / 3);
+// Padding horizontal del grid (más aire a izquierda y derecha para que no se vean pegadas las burbujas)
+const GRID_PADDING_H = 56;
+const GRID_ROW_PADDING_H = 6;
+const BUBBLE_MARGIN_H = 6;
+// Tamaño de burbuja para que quepan 3 por fila: (ancho - padding grid - padding row - márgenes entre burbujas) / 3
+const BUBBLE_SIZE = Math.max(100, (SCREEN_WIDTH - 2 * GRID_PADDING_H - 2 * GRID_ROW_PADDING_H - 6 * BUBBLE_MARGIN_H) / 3);
 const BUBBLE_SIZE_INNER = BUBBLE_SIZE - 12; // Tamaño interno de la burbuja
 const BUBBLE_RADIUS = BUBBLE_SIZE_INNER / 2; // Radio de la burbuja
 const BUBBLE_SIZE_IMAGE = BUBBLE_SIZE - 24; // Tamaño para imagen/inicial
@@ -127,6 +133,7 @@ export default function VinculosScreen() {
   const inputNuevaInteraccionRef = useRef(null);
   // Estados para modal de interacciones (historial, se pueden editar)
   const [modalInteraccionesVisible, setModalInteraccionesVisible] = useState(false);
+  const [modalHuellasContactoVisible, setModalHuellasContactoVisible] = useState(false);
   const [textoInteraccion, setTextoInteraccion] = useState('');
   const [fechaHoraInteraccion, setFechaHoraInteraccion] = useState(new Date());
   const [showDatePickerInteraccion, setShowDatePickerInteraccion] = useState(false);
@@ -142,24 +149,8 @@ export default function VinculosScreen() {
   const [modalInteraccionFiltroTiempo, setModalInteraccionFiltroTiempo] = useState('Todas'); // Filtro tiempo en modal Interacciones
   const [modalInteraccionDropdownFiltroVisible, setModalInteraccionDropdownFiltroVisible] = useState(false);
   
-  // Estados para modal de tareas (separado, se pueden borrar y completar)
-  const [modalTareasVisible, setModalTareasVisible] = useState(false);
-  const [textoTarea, setTextoTarea] = useState('');
-  const [fechaHoraEjecucion, setFechaHoraEjecucion] = useState(new Date());
-  const [clasificacionTarea, setClasificacionTarea] = useState(TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
-  const [tareaRecurrenteAnual, setTareaRecurrenteAnual] = useState(false);
-  const [showDatePickerEjecucion, setShowDatePickerEjecucion] = useState(false);
-  const [dateModeEjecucion, setDateModeEjecucion] = useState('date');
-  const [tareaDesdeTarea, setTareaDesdeTarea] = useState(null); // Para crear tarea desde otra tarea
-  const [modalGestoFiltroTiempo, setModalGestoFiltroTiempo] = useState('Todas'); // Filtro en modal Gestos del contacto
-  const [modalGestoFiltroTipo, setModalGestoFiltroTipo] = useState('Todas');
-  const [modalGestoHistorialVisible, setModalGestoHistorialVisible] = useState(false); // Modal Historial (solo completados)
-  const [modalAgregarGestoPorTextoVisible, setModalAgregarGestoPorTextoVisible] = useState(false); // Modal "Agregar por texto" (carga manual)
-  const [modalGestoDropdownFiltroVisible, setModalGestoDropdownFiltroVisible] = useState(false);
-  const [modalGestoDropdownTipoVisible, setModalGestoDropdownTipoVisible] = useState(false);
-  const modalGestosScrollRef = useRef(null);
-  const modalGestoHistorialYRef = useRef(0);
-  
+  // Modal de atenciones del contacto (componente reutilizable AtencionesModalContacto)
+  const [modalAtencionesContactoVisible, setModalAtencionesContactoVisible] = useState(false);
   // Estados para botón Regar: agregar interacción desde pantalla (elegir contacto → formulario)
   const [modalRegarVisible, setModalRegarVisible] = useState(false);
   const [pasoRegar, setPasoRegar] = useState('contacto'); // 'contacto' | 'formulario'
@@ -553,6 +544,13 @@ export default function VinculosScreen() {
     return COLORES.urgente;
   };
 
+  /** Colores muted para anillos (minimalismo empático: informativos, no invasivos). */
+  const obtenerColorDegradacionMuted = (nivel) => {
+    if (nivel < 0.25) return COLORES.mutedActivo || COLORES.activo;
+    if (nivel < 0.55) return COLORES.mutedAtencion || COLORES.atencion;
+    return COLORES.mutedUrgente || COLORES.urgente;
+  };
+
   // Algoritmo de Interacción Social
   // Calcula un score basado en datos completados, interacciones, frecuencia y cumplimiento de tareas
   const calcularScoreInteraccionSocial = (contacto) => {
@@ -734,7 +732,7 @@ export default function VinculosScreen() {
                   id: `tarea-${contacto._id}-${tarea.fechaHoraCreacion}`,
                   tipo: 'tarea',
                   prioridad: diasRestantes <= 0 ? 'urgente' : diasRestantes <= 3 ? 'alta' : 'media',
-                  titulo: `📋 ${tarea.clasificacion || 'Gesto'}`,
+                  titulo: `📋 ${tarea.clasificacion || 'Huella'}`,
                   descripcion: tarea.descripcion,
                   contacto: contacto.nombre,
                   contactoId: contacto._id,
@@ -1296,7 +1294,6 @@ export default function VinculosScreen() {
         const data = await res.json();
         setDatosEditados({ ...data, telefonoOriginal: datosEditados.telefonoOriginal, telefono: datosEditados.telefono });
         setTextoInteraccion("");
-        setFechaHoraInteraccion(new Date());
         setModalAgregarInteraccionVisible(false);
         cargarVinculos();
       }
@@ -1356,246 +1353,6 @@ export default function VinculosScreen() {
   };
 
   // Funciones para gestionar tareas (separadas, se pueden borrar y completar)
-  const agregarTarea = async () => {
-    if (!textoTarea.trim()) {
-      Alert.alert("Atención", "Describe el gesto.");
-      return;
-    }
-    
-    const fechaEjecucionValida = (fechaHoraEjecucion instanceof Date && !isNaN(fechaHoraEjecucion.getTime())) ? fechaHoraEjecucion : new Date();
-    
-    // Asegurar que datosEditados.tareas existe y es un array
-    const tareasExistentes = Array.isArray(datosEditados.tareas) ? datosEditados.tareas : [];
-    
-    const nuevaTarea = { 
-      fechaHoraCreacion: new Date(),
-      descripcion: textoTarea.trim(),
-      fechaHoraEjecucion: fechaEjecucionValida,
-      clasificacion: clasificacionTarea,
-      completada: false,
-      interaccionRelacionada: tareaDesdeTarea ? (tareaDesdeTarea._id || null) : null,
-      ...(tareaRecurrenteAnual && {
-        recurrencia: { tipo: 'anual', fechaBase: fechaEjecucionValida },
-        completadoParaAno: [],
-      }),
-    };
-    
-    if (!datosEditados._id) {
-      Alert.alert("Error", "El contacto debe estar guardado antes de agregar gestos.");
-      return;
-    }
-    
-    const tareasActualizadas = [...tareasExistentes, nuevaTarea];
-    
-    console.log('=== AGREGAR TAREA ===');
-    console.log('Nueva tarea:', nuevaTarea);
-    console.log('Tareas existentes:', tareasExistentes.length);
-    console.log('Tareas actualizadas:', tareasActualizadas.length);
-    console.log('ID del contacto:', datosEditados._id);
-    
-    try {
-      const result = await updateContactTareas(datosEditados._id, tareasActualizadas);
-      
-      if (result.success) {
-        console.log('✅ Tarea guardada exitosamente');
-        
-        // Asegurar que tareas es un array antes de actualizar el estado
-        const tareasGuardadas = Array.isArray(result.contacto.tareas) ? result.contacto.tareas : [];
-        
-        setDatosEditados({ 
-          ...result.contacto, 
-          telefonoOriginal: datosEditados.telefonoOriginal, 
-          telefono: datosEditados.telefono,
-          tareas: tareasGuardadas
-        });
-        setTextoTarea("");
-        setFechaHoraEjecucion(new Date());
-        setClasificacionTarea('Llamar');
-        setModalAgregarGestoPorTextoVisible(false);
-        setTareaRecurrenteAnual(false);
-        setTareaDesdeTarea(null);
-        
-        // Actualizar contador de pendientes
-        const pendingCount = await getPendingSyncCount();
-        setPendingSyncCount(pendingCount);
-        
-        cargarVinculos();
-        
-        if (result.offline) {
-          console.log('📝 Tarea guardada localmente, se sincronizará cuando haya conexión');
-        }
-      } else {
-        Alert.alert("Error", "No se pudo guardar el gesto.");
-      }
-    } catch (e) { 
-      console.error('❌ Error agregando tarea:', e);
-      Alert.alert("Error", "No se pudo guardar el gesto."); 
-    }
-  };
-
-  const toggleTareaCompletada = async (index) => {
-    if (!datosEditados._id) {
-      Alert.alert("Error", "El contacto debe estar guardado.");
-      return;
-    }
-    
-    const tareasActualizadas = [...(datosEditados.tareas || [])];
-    const tarea = tareasActualizadas[index];
-    const nuevaCompletada = !tarea.completada;
-    
-    if (nuevaCompletada) {
-      tareasActualizadas[index].fechaHoraCompletado = new Date();
-      tareasActualizadas[index].completada = true;
-      if (tarea.recurrencia?.tipo === 'anual') {
-        const anio = new Date().getFullYear();
-        const completados = [...(tarea.completadoParaAno || []), anio];
-        tareasActualizadas[index].completadoParaAno = [...new Set(completados)];
-      }
-    } else {
-      delete tareasActualizadas[index].fechaHoraCompletado;
-      tareasActualizadas[index].completada = false;
-      if (tarea.recurrencia?.tipo === 'anual' && tarea.completadoParaAno?.length) {
-        const anio = new Date().getFullYear();
-        tareasActualizadas[index].completadoParaAno = (tarea.completadoParaAno || []).filter(y => y !== anio);
-      }
-    }
-    
-    try {
-      const result = await updateContactTareas(datosEditados._id, tareasActualizadas);
-      
-      if (result.success) {
-        setDatosEditados({ 
-          ...result.contacto, 
-          telefonoOriginal: datosEditados.telefonoOriginal, 
-          telefono: datosEditados.telefono 
-        });
-        
-        // Actualizar contador de pendientes
-        const pendingCount = await getPendingSyncCount();
-        setPendingSyncCount(pendingCount);
-        
-        cargarVinculos();
-        
-        if (result.offline) {
-          console.log('📝 Cambio de tarea guardado localmente, se sincronizará cuando haya conexión');
-        }
-      } else {
-        Alert.alert("Error", "No se pudo actualizar el gesto.");
-      }
-    } catch (e) { 
-      console.error('Error actualizando tarea:', e);
-      Alert.alert("Error", "No se pudo actualizar el gesto."); 
-    }
-  };
-
-  const eliminarTarea = async (index) => {
-    if (!datosEditados._id) {
-      Alert.alert("Error", "El contacto debe estar guardado.");
-      return;
-    }
-    
-    Alert.alert(
-      "Eliminar gesto",
-      "¿Estás seguro de eliminar este gesto?",
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Eliminar",
-          style: "destructive",
-          onPress: async () => {
-            const tareasActualizadas = [...(datosEditados.tareas || [])];
-            tareasActualizadas.splice(index, 1);
-            
-            try {
-              const result = await updateContactTareas(datosEditados._id, tareasActualizadas);
-              
-              if (result.success) {
-                setDatosEditados({ 
-                  ...result.contacto, 
-                  telefonoOriginal: datosEditados.telefonoOriginal, 
-                  telefono: datosEditados.telefono 
-                });
-                
-                // Actualizar contador de pendientes
-                const pendingCount = await getPendingSyncCount();
-                setPendingSyncCount(pendingCount);
-                
-                cargarVinculos();
-                
-                if (result.offline) {
-                  console.log('📝 Eliminación de tarea guardada localmente, se sincronizará cuando haya conexión');
-                }
-              } else {
-                Alert.alert("Error", "No se pudo eliminar el gesto.");
-              }
-            } catch (e) { 
-              console.error('Error eliminando gesto:', e);
-              Alert.alert("Error", "No se pudo eliminar el gesto."); 
-            }
-          }
-        }
-      ]
-    );
-  };
-
-  // Al abrir el modal de tareas, asegurar fecha/hora por defecto = ahora (por si se entra por otra ruta)
-  useEffect(() => {
-    if (modalTareasVisible) {
-      setFechaHoraEjecucion(prev => (prev && prev instanceof Date && !isNaN(prev.getTime()) ? prev : new Date()));
-    }
-  }, [modalTareasVisible]);
-
-  // Fecha/hora a mostrar en el formulario de nueva tarea (siempre un Date válido para evitar campo vacío)
-  const fechaEjecucionDisplay = useMemo(() => {
-    const d = fechaHoraEjecucion;
-    return (d instanceof Date && !isNaN(d.getTime())) ? d : new Date();
-  }, [fechaHoraEjecucion]);
-
-  const crearTareaDesdeTarea = (tarea) => {
-    setTareaDesdeTarea(tarea);
-    setTextoTarea("");
-    setFechaHoraEjecucion(new Date());
-    setClasificacionTarea(tarea.clasificacion || TIPOS_DE_GESTO_DISPLAY[0] || 'Llamar');
-    setModalTareasVisible(true);
-  };
-
-  // Helpers para mostrar gestos con formato tipo pestaña Gestos
-  const formatearFechaGesto = (fecha) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const fechaTarea = new Date(fecha);
-    fechaTarea.setHours(0, 0, 0, 0);
-    const diffDias = Math.floor((fechaTarea - hoy) / (1000 * 60 * 60 * 24));
-    if (diffDias === 0) return 'Hoy';
-    if (diffDias === 1) return 'Mañana';
-    if (diffDias === -1) return 'Ayer';
-    if (diffDias > 1 && diffDias <= 7) return `En ${diffDias} días`;
-    if (diffDias < -1 && diffDias >= -7) return `Hace ${Math.abs(diffDias)} días`;
-    return fechaTarea.toLocaleDateString('es-ES', {
-      day: 'numeric',
-      month: 'short',
-      year: fechaTarea.getFullYear() !== hoy.getFullYear() ? 'numeric' : undefined,
-    });
-  };
-  const formatearHoraGesto = (fecha) =>
-    new Date(fecha).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
-  const getPrioridadColorGesto = (fechaEjecucion) => {
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const fechaTarea = new Date(fechaEjecucion);
-    fechaTarea.setHours(0, 0, 0, 0);
-    const diffDias = Math.floor((fechaTarea - hoy) / (1000 * 60 * 60 * 24));
-    if (diffDias < 0) return COLORES.urgente;
-    if (diffDias === 0 || diffDias <= 3) return COLORES.atencion;
-    return COLORES.activo;
-  };
-  const ejecutarAccionGestoContacto = (item) => {
-    const config = getGestoConfig(item.clasificacion || 'Otro');
-    const telefono = datosEditados.telefono ? limpiarTelefonoVisual(datosEditados.telefono) : '';
-    if (config.action === 'call' && telefono) Linking.openURL(`tel:${telefono}`);
-    else if (config.action === 'whatsapp' && telefono) Linking.openURL(`whatsapp://send?phone=${telefono}`);
-  };
-
   const SelectorChips = ({ opciones, seleccionado, onSelect, colorActive }) => (
     <View style={styles.chipContainer}>
       {opciones.map(op => (
@@ -1723,15 +1480,8 @@ export default function VinculosScreen() {
       tareas: contactoCompleto.tareas || [],
       interacciones: contactoCompleto.interacciones || [],
     });
-    setTextoTarea('');
-    setFechaHoraEjecucion(new Date());
-    setClasificacionTarea('Llamar');
-    setTareaDesdeTarea(null);
-    setModalGestoFiltroTiempo('Todas');
-    setModalGestoFiltroTipo('Todas');
-    setModalGestoHistorialVisible(false);
     setCurrentContactForVoice({ id: contactoCompleto._id, nombre: contactoCompleto.nombre || 'Contacto' });
-    setModalTareasVisible(true);
+    setModalAtencionesContactoVisible(true);
   };
 
   const regarContacto = (contacto) => {
@@ -1762,10 +1512,6 @@ export default function VinculosScreen() {
     // Inicializar estados de los modales
     setTextoInteraccion("");
     setFechaHoraInteraccion(new Date());
-    setTextoTarea("");
-    setFechaHoraEjecucion(new Date());
-    setClasificacionTarea('Llamar');
-    setTareaDesdeTarea(null);
     
     // Abrir directamente el modal de interacciones
     setModalInteraccionesVisible(true);
@@ -1826,18 +1572,6 @@ export default function VinculosScreen() {
     if (!item) return null;
     
     const degradacion = calcularDegradacion(item);
-    const colorBurbuja = obtenerColorDegradacion(degradacion.nivel);
-    // Icono de notificaciones solo el día del evento o si el evento ya pasó (vencido)
-    const hoy = new Date();
-    hoy.setHours(0, 0, 0, 0);
-    const tieneTareaPendiente = item.tareas && item.tareas.some(t => {
-      if (t.completada) return false;
-      const fe = t.fechaHoraEjecucion ? new Date(t.fechaHoraEjecucion) : null;
-      if (!fe || isNaN(fe.getTime())) return false;
-      const feNorm = new Date(fe);
-      feNorm.setHours(0, 0, 0, 0);
-      return feNorm.getTime() <= hoy.getTime(); // hoy o pasado
-    });
     const bubbleKey = (item._id || item.telefono || index).toString();
     const animacion = animaciones.current[bubbleKey];
     
@@ -1887,112 +1621,56 @@ export default function VinculosScreen() {
           activeOpacity={0.8}
           style={styles.burbujaTouchable}
         >
-          {/* Contenedor del círculo + badges para que los iconos queden sobre el borde de la burbuja */}
+          {/* Un solo círculo azul (color app), sin anillos exteriores; solo indicador "requiere atención" */}
           <View style={styles.burbujaWrapper}>
-            {/* Círculo exterior rojo sutil cuando el contacto tiene alta importancia */}
-            {item.prioridad && item.prioridad.includes('Alta') && (
-              <View style={styles.burbujaAnilloPrioridad} />
-            )}
-            <View style={[
-              styles.burbuja, 
-              { 
-                borderColor: colorBurbuja,
-                borderWidth: degradacion.nivel < 0.3 ? 2.5 : 2,
-              }
-            ]}>
-              <View style={[
-                styles.burbujaGradiente,
-                { opacity: 1 - degradacion.nivel * 0.6 }
-              ]} />
-              
+            <View style={styles.burbujaAzul}>
               {item.foto && item.foto.length > 20 ? (
                 <View style={styles.burbujaImagenContainer}>
                   <Image 
                     source={{ uri: item.foto }} 
                     style={styles.burbujaImagen}
                   />
-                  <View style={[
-                    StyleSheet.absoluteFill,
-                    {
-                      backgroundColor: 'rgba(255, 255, 255, 0.3)',
-                      opacity: 1 - degradacion.saturacion,
-                      borderRadius: BUBBLE_RADIUS_IMAGE,
-                    }
-                  ]} />
                 </View>
               ) : (
-                <View style={[
-                  styles.burbujaInicial,
-                  { 
-                    backgroundColor: degradacion.nivel > 0.5 ? COLORES.fondoTerciario : COLORES.fondoSecundario,
-                  }
-                ]}>
+                <View style={styles.burbujaInicialAzul}>
                   <Ionicons 
                     name="person" 
                     size={BUBBLE_SIZE_IMAGE * 0.5} 
                     color={COLORES.textoSuave}
-                    style={{ opacity: degradacion.saturacion }}
                   />
                 </View>
               )}
             </View>
             
-            {/* Iconos: al tocar campanita abre gestos, al tocar gota/sparkles abre momentos */}
-            {tieneTareaPendiente && (
-              <TouchableOpacity
-                style={[styles.badgeTarea, { borderColor: COLORES.atencion }]}
-                onPress={() => abrirModalGestosDesdeBurbuja(item)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="notifications" size={20} color={COLORES.atencion} />
-              </TouchableOpacity>
-            )}
+            {/* Indicador "requiere atención" (sparkles) arriba a la derecha */}
             {degradacion.nivel > 0.4 && (() => {
               const regarAnim = regarAnimaciones.current[bubbleKey];
               if (!regarAnim) return null;
               return (
-                <TouchableOpacity
-                  onPress={() => regarContacto(item)}
-                  activeOpacity={0.8}
-                  style={styles.badgeRegarTouchable}
-                >
-                  <Animated.View
-                    style={[
-                      styles.badgeRegar,
-                      {
-                        transform: [
-                          { translateY: regarAnim.translateY }
-                        ]
-                      }
-                    ]}
+                <View style={styles.badgeChispaContainer}>
+                  <TouchableOpacity
+                    onPress={() => regarContacto(item)}
+                    activeOpacity={0.8}
+                    style={styles.badgeIconoMutedTouchable}
                   >
-                    <Ionicons name="sparkles" size={20} color={COLORES.agua} />
-                  </Animated.View>
-                </TouchableOpacity>
+                    <Animated.View
+                      style={[
+                        styles.badgeIconoMuted,
+                        { backgroundColor: '#F5B800', borderWidth: 0, borderColor: 'transparent', shadowOpacity: 0, elevation: 0 },
+                        { transform: [{ translateY: regarAnim.translateY }] }
+                      ]}
+                    >
+                      <Ionicons name="sparkles" size={14} color="#FFFFFF" />
+                    </Animated.View>
+                  </TouchableOpacity>
+                </View>
               );
             })()}
           </View>
           
-          <Text style={[
-            styles.burbujaNombre,
-            { color: COLORES.texto }
-          ]} numberOfLines={1}>
+          <Text style={[styles.burbujaNombre, { color: COLORES.texto }]} numberOfLines={1}>
             {item.nombre}
           </Text>
-          
-          {degradacion.nivel > 0.25 && (
-            <View style={[
-              styles.degradacionBadge, 
-              { 
-                backgroundColor: colorBurbuja,
-                opacity: 0.9
-              }
-            ]}>
-              <Text style={styles.degradacionTexto}>
-                {degradacion.diasSinAtencion}d
-              </Text>
-            </View>
-          )}
         </TouchableOpacity>
       </Animated.View>
     );
@@ -2005,12 +1683,12 @@ export default function VinculosScreen() {
         <View style={styles.gameContainer}>
           <View style={styles.gameHeader}>
             <TouchableOpacity onPress={cerrarModoJuego} style={styles.exitButton}>
-              <Ionicons name="close-circle" size={32} color="white" />
+              <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
           </View>
           <Text style={styles.gameTitle}>¡Terminaste!</Text>
-          <Text style={{color: 'white', fontSize: 18, textAlign: 'center', marginTop: 20}}>
+          <Text style={{color: COLORES.textoSecundario, fontSize: 18, textAlign: 'center', marginTop: 20}}>
             Has revisado todos los contactos disponibles
           </Text>
           <TouchableOpacity 
@@ -2031,7 +1709,7 @@ export default function VinculosScreen() {
           <View style={styles.gameContainer}>
             <View style={styles.gameHeader}>
               <TouchableOpacity onPress={cerrarModoJuego} style={styles.exitButton}>
-                <Ionicons name="close-circle" size={32} color="white" />
+                <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
                 <Text style={styles.exitText}>Salir</Text>
               </TouchableOpacity>
             </View>
@@ -2146,7 +1824,7 @@ export default function VinculosScreen() {
 
           <View style={styles.gameHeader}>
             <TouchableOpacity onPress={cerrarModoJuego} style={styles.exitButton}>
-              <Ionicons name="close-circle" size={32} color="white" />
+              <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
           </View>
@@ -2202,7 +1880,7 @@ export default function VinculosScreen() {
               onPress={abrirDirectorio}
               activeOpacity={0.8}
             >
-              <Ionicons name="person-add" size={20} color="white" />
+              <Ionicons name="person-add" size={18} color="white" />
               <Text style={styles.floatingButtonImportText}>Importar contactos</Text>
             </TouchableOpacity>
           </View>
@@ -2213,9 +1891,25 @@ export default function VinculosScreen() {
 
   if (cargando) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" color={COLORES.agua} />
-      </View>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <View style={styles.container}>
+          <View style={styles.headerContainer}>
+            <Text style={styles.header}>Vínculos</Text>
+          </View>
+          <View style={styles.skeletonGrid}>
+            {[1, 2, 3, 4, 5, 6].map((i) => (
+              <View key={i} style={styles.skeletonBurbuja}>
+                <View style={styles.skeletonCircle} />
+                <View style={styles.skeletonNombre} />
+              </View>
+            ))}
+          </View>
+          <View style={styles.skeletonLoaderFooter}>
+            <ActivityIndicator size="small" color={COLORES.agua} />
+            <Text style={styles.skeletonLoaderText}>Cargando vínculos...</Text>
+          </View>
+        </View>
+      </SafeAreaView>
     );
   }
 
@@ -2228,9 +1922,11 @@ export default function VinculosScreen() {
               <Text style={styles.header}>Vínculos</Text>
             </View>
             <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={80} color={COLORES.textoSuave} />
-              <Text style={styles.emptyText}>No hay vínculos para mostrar</Text>
-              <Text style={styles.emptySubtext}>Toca el botón para descubrir contactos</Text>
+              <View style={styles.emptyStateIconWrap}>
+                <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
+              </View>
+              <Text style={styles.emptyText}>No hay vínculos aún</Text>
+              <Text style={styles.emptySubtext}>Toca el botón de abajo para descubrir contactos y cultivar tus relaciones.</Text>
             </View>
           </View>
           {/* Botón flotante para modo swipe */}
@@ -2277,14 +1973,13 @@ export default function VinculosScreen() {
                   </TouchableOpacity>
                 </View>
                 
-                {/* Foto con indicador de señal (barras) de nivel de atención */}
+                {/* Foto con un corazón que se llena según el porcentaje de atención */}
                 {(() => {
                   try {
                     const porcentajeAtencion = calcularPorcentajeAtencion(datosEditados, vinculos);
-                    const colorVerde = COLORES.activo || '#66BB6A';
+                    const colorMarca = COLORES.agua;
                     const colorGris = COLORES.textoSuave || '#8B95A5';
-                    // 4 barras tipo señal: se pintan de verde según porcentaje (25%, 50%, 75%, 100%)
-                    const alturasBarras = [10, 18, 26, 34];
+                    const opacidadRelleno = Math.min(100, Math.max(0, porcentajeAtencion)) / 100;
                     return (
                       <View style={styles.photoWithBarContainer}>
                         <View style={styles.photoContainerCentered} pointerEvents="box-none">
@@ -2310,31 +2005,24 @@ export default function VinculosScreen() {
                             activeOpacity={0.8}
                             onPress={() => {
                               Alert.alert(
-                                'Intensidad de relación',
-                                'Esta barra refleja qué tan presente estás en la vida de este contacto. Se nutre con los gestos que cumples (llamar, escribir, felicitar) y los momentos que registras.\n\nCada pequeño gesto y cada momento que anotas hace crecer tu vínculo. ¡Cultiva tus relaciones con constancia y cariño! 🌱',
+                                'Nivel de conexión',
+                                'Este indicador refleja qué tan presente estás en la vida de este contacto. Se nutre con las atenciones que cumples (llamar, escribir, felicitar) y los momentos que registras.\n\nCada pequeña atención y cada momento que anotas hace crecer tu vínculo. ¡Cultiva tus relaciones con constancia y cariño! 🌱',
                                 [{ text: 'Entendido' }]
                               );
                             }}
                             style={styles.signalAtencionTouchable}
                           >
                             <View style={styles.signalAtencionContainer}>
-                              <View style={styles.signalAtencionBarras}>
-                                {alturasBarras.map((h, i) => (
-                                  <View
-                                    key={i}
-                                    style={[
-                                      styles.signalAtencionBarra,
-                                      {
-                                        height: h,
-                                        backgroundColor: porcentajeAtencion >= (i + 1) * 25 ? colorVerde : colorGris,
-                                      },
-                                    ]}
-                                  />
-                                ))}
+                              <View style={styles.signalAtencionHeartWrap}>
+                                <Ionicons name="heart-outline" size={28} color={colorGris} style={styles.signalAtencionHeartOutline} />
+                                <View style={[styles.signalAtencionHeartFilledWrap, { opacity: opacidadRelleno }]}>
+                                  <Ionicons name="heart" size={28} color={colorMarca} style={styles.signalAtencionHeartFilled} />
+                                </View>
                               </View>
                               <Text style={[styles.signalAtencionPorcentaje, { color: colorGris }]}>
                                 {Math.round(porcentajeAtencion)}%
                               </Text>
+                              <Text style={styles.signalAtencionLabel}>Nivel de conexión</Text>
                             </View>
                           </TouchableOpacity>
                         </View>
@@ -2373,38 +2061,19 @@ export default function VinculosScreen() {
                 {/* Iconos pequeños para acciones rápidas */}
                 <View style={styles.iconosAccionContainer}>
                   <TouchableOpacity 
-                    style={styles.iconoAccion}
-                    onPress={() => {
-                      setTextoInteraccion("");
-                      setFechaHoraInteraccion(new Date());
-                      setModalInteraccionesVisible(true);
-                    }}
+                    style={[styles.iconoAccion, { backgroundColor: COLORES.atencion }]}
+                    onPress={() => setModalAtencionesContactoVisible(true)}
                   >
                     <Ionicons name="sparkles" size={20} color="white" />
+                  </TouchableOpacity>
+                  <TouchableOpacity 
+                    style={[styles.iconoAccion, { backgroundColor: COLORES.agua }]}
+                    onPress={() => setModalHuellasContactoVisible(true)}
+                  >
+                    <Ionicons name="footsteps-outline" size={20} color="white" />
                     {datosEditados.interacciones && datosEditados.interacciones.length > 0 && (
                       <View style={styles.iconoBadge}>
                         <Text style={styles.iconoBadgeText}>{datosEditados.interacciones.length}</Text>
-                      </View>
-                    )}
-                  </TouchableOpacity>
-                  <TouchableOpacity 
-                    style={[styles.iconoAccion, { backgroundColor: COLORES.atencion }]}
-                    onPress={() => {
-                      setTextoTarea("");
-                      setFechaHoraEjecucion(new Date());
-                      setClasificacionTarea('Llamar');
-                      setTareaDesdeTarea(null);
-                      setModalGestoFiltroTiempo('Todas');
-                      setModalGestoFiltroTipo('Todas');
-                      setModalGestoHistorialVisible(false);
-                      setCurrentContactForVoice({ id: datosEditados._id, nombre: datosEditados.nombre || 'Contacto' });
-                      setModalTareasVisible(true);
-                    }}
-                  >
-                    <Ionicons name="heart" size={20} color="white" />
-                    {datosEditados.tareas && datosEditados.tareas.filter(t => !t.completada).length > 0 && (
-                      <View style={styles.iconoBadge}>
-                        <Text style={styles.iconoBadgeText}>{datosEditados.tareas.filter(t => !t.completada).length}</Text>
                       </View>
                     )}
                   </TouchableOpacity>
@@ -2515,6 +2184,42 @@ export default function VinculosScreen() {
           </KeyboardAvoidingView>
         </Modal>
 
+        {/* Modal Huellas del contacto (mismo contenido que pestaña Huellas, filtrado a este contacto) */}
+        <HuellasModalContacto
+          visible={modalHuellasContactoVisible}
+          onClose={() => setModalHuellasContactoVisible(false)}
+          contact={datosEditados}
+          onContactUpdate={(c) => {
+            setDatosEditados(c);
+            setVinculos(prev => (Array.isArray(prev) ? prev.map(x => (x._id === c._id ? c : x)) : prev));
+          }}
+        />
+
+        <AtencionesModalContacto
+          visible={modalAtencionesContactoVisible}
+          onClose={() => { setModalAtencionesContactoVisible(false); setCurrentContactForVoice(null); }}
+          contact={datosEditados}
+          onContactUpdate={(c) => {
+            setDatosEditados(c);
+            setVinculos(prev => (Array.isArray(prev) ? prev.map(x => (x._id === c._id ? c : x)) : prev));
+            cargarVinculos();
+          }}
+          onRequestVoice={(contacto) => {
+            setVoicePreviewContactoFromModal({ id: contacto._id, nombre: contacto.nombre || 'Contacto' });
+            setCurrentContactForVoice(contacto);
+            setModalAtencionesContactoVisible(false);
+            setTimeout(async () => {
+              try {
+                const { recording, error } = await startRecording();
+                if (error) Alert.alert('Grabación', error);
+                else setVoiceRecording(recording);
+              } catch (e) {
+                Alert.alert('Grabación', e.message || 'Error al grabar');
+              }
+            }, 350);
+          }}
+        />
+
         {/* Modal de interacciones - misma distribución que modal de gestos: header, fila filtros, FABs, lista */}
         <Modal animationType="slide" visible={modalInteraccionesVisible} onRequestClose={() => { setModalInteraccionesVisible(false); setVoicePreviewContactoFromModal(null); }}>
           <SafeAreaView style={styles.modalFull}>
@@ -2567,29 +2272,6 @@ export default function VinculosScreen() {
                 </TouchableOpacity>
               </View>
               <View style={styles.modalGestoDesplegableWrap} />
-            </View>
-
-            {/* FABs a la derecha (mic, +) como en modal de gestos */}
-            <View style={styles.modalGestoFabsContainer} pointerEvents="box-none">
-              <TouchableOpacity
-                style={styles.modalGestoFabMic}
-                onPress={async () => {
-                  setVoicePreviewContactoFromModal({ id: datosEditados._id, nombre: datosEditados.nombre || 'Contacto' });
-                  setCurrentContactForVoice(datosEditados);
-                  setModalInteraccionesVisible(false);
-                  setTimeout(async () => {
-                    const { recording, error } = await startRecording();
-                    if (error) Alert.alert('Grabación', error);
-                    else setVoiceRecording(recording);
-                  }, 350);
-                }}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="mic" size={24} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity style={styles.modalGestoFabAdd} onPress={() => setModalAgregarInteraccionVisible(true)} activeOpacity={0.8}>
-                <Ionicons name="add" size={26} color="white" />
-              </TouchableOpacity>
             </View>
 
             {/* Modal desplegable Filtro tiempo (interacciones) */}
@@ -2652,7 +2334,7 @@ export default function VinculosScreen() {
                         {hayInteracciones ? 'No hay momentos en este periodo' : 'No hay momentos registrados'}
                       </Text>
                       <Text style={[styles.emptyInteraccionesText, { fontSize: 14, marginTop: 4 }]}>
-                        {hayInteracciones ? 'Prueba otro filtro o pulsa + para agregar' : 'Pulsa el micrófono o el + a la derecha para agregar'}
+                        {hayInteracciones ? 'Prueba otro filtro' : 'Usa el botón flotante del micrófono para agregar un momento'}
                       </Text>
                     </View>
                   );
@@ -2691,7 +2373,7 @@ export default function VinculosScreen() {
                             </View>
                             <View style={styles.modalGestoHoraContainer}>
                               <Ionicons name="time-outline" size={14} color={COLORES.textoSecundario} />
-                              <Text style={styles.modalGestoHoraText}>{fechaInteraccion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</Text>
+                              <Text style={styles.modalGestoHoraText}>{formatTime12h(fechaInteraccion)}</Text>
                             </View>
                           </View>
                         )}
@@ -2736,7 +2418,7 @@ export default function VinculosScreen() {
                 >
                   <Ionicons name="calendar" size={16} color={COLORES.agua} />
                   <Text style={styles.interaccionFechaButtonText}>
-                    {editInteraccionFecha ? `${editInteraccionFecha.toLocaleDateString('es-ES')} ${editInteraccionFecha.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Seleccionar'}
+                    {editInteraccionFecha ? `${editInteraccionFecha.toLocaleDateString('es-ES')} ${formatTime12h(editInteraccionFecha)}` : 'Seleccionar'}
                   </Text>
                 </TouchableOpacity>
                 {showDatePickerEditInteraccion && (
@@ -2800,526 +2482,15 @@ export default function VinculosScreen() {
                   placeholder="Qué hiciste o comentaste (ej: Llamada para felicitar)..."
                   multiline={true}
                 />
-                <Text style={styles.label}>Fecha y hora</Text>
-                <TouchableOpacity
-                  style={[styles.interaccionFechaButton, styles.interaccionFechaButtonTarea]}
-                  onPress={() => {
-                    setDateModeInteraccion('date');
-                    setShowDatePickerInteraccion(true);
-                    if (!fechaHoraInteraccion || !(fechaHoraInteraccion instanceof Date) || isNaN(fechaHoraInteraccion.getTime())) {
-                      setFechaHoraInteraccion(new Date());
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.interaccionFechaButtonIconWrap}>
-                    <Ionicons name="calendar" size={32} color={COLORES.agua} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.interaccionFechaButtonHint}>Toca para elegir fecha y hora</Text>
-                    <Text style={[styles.interaccionFechaButtonText, { color: COLORES.texto, fontSize: 14 }]}>
-                      {(fechaHoraInteraccion && fechaHoraInteraccion instanceof Date && !isNaN(fechaHoraInteraccion.getTime()) ? fechaHoraInteraccion : new Date()).toLocaleDateString('es-ES')} · {(fechaHoraInteraccion && fechaHoraInteraccion instanceof Date && !isNaN(fechaHoraInteraccion.getTime()) ? fechaHoraInteraccion : new Date()).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={22} color={COLORES.textoSuave} />
-                </TouchableOpacity>
-                {showDatePickerInteraccion && (
-                  <DateTimePicker
-                    value={fechaHoraInteraccion && fechaHoraInteraccion instanceof Date && !isNaN(fechaHoraInteraccion.getTime()) ? fechaHoraInteraccion : new Date()}
-                    mode={dateModeInteraccion}
-                    is24Hour={true}
-                    display="default"
-                    onChange={(e, d) => {
-                      if (e.type === 'dismissed') { setShowDatePickerInteraccion(false); return; }
-                      const curr = d || new Date();
-                      if (dateModeInteraccion === 'date') {
-                        setFechaHoraInteraccion(curr);
-                        if (Platform.OS === 'android') {
-                          setShowDatePickerInteraccion(false);
-                          setTimeout(() => { setDateModeInteraccion('time'); setShowDatePickerInteraccion(true); }, 100);
-                        } else {
-                          setDateModeInteraccion('time');
-                        }
-                      } else {
-                        setFechaHoraInteraccion(curr);
-                        setShowDatePickerInteraccion(false);
-                      }
-                    }}
-                  />
-                )}
                 <TouchableOpacity
                   style={[styles.addInteraccionButton, !textoInteraccion.trim() && styles.addInteraccionButtonDisabled]}
                   onPress={agregarInteraccion}
                   disabled={!textoInteraccion.trim()}
                 >
-                  <Ionicons name="add-circle" size={20} color="white" />
+                  <Ionicons name="create-outline" size={20} color="white" />
                   <Text style={styles.addInteraccionButtonText}>Agregar momento</Text>
                 </TouchableOpacity>
               </View>
-            </ScrollView>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Modal de gestos del contacto - mismo aspecto que pestaña Gestos (imagen 2), filtrado por este contacto */}
-        <Modal animationType="slide" visible={modalTareasVisible} onRequestClose={() => { setModalTareasVisible(false); setCurrentContactForVoice(null); }}>
-          <SafeAreaView style={styles.modalFull}>
-            {/* Header: título + subtítulo (como pestaña Gestos) */}
-            {(() => {
-              const tareasContacto = datosEditados.tareas || [];
-              const pendientes = tareasContacto.filter(t => !t.completada);
-              const hoy = new Date();
-              hoy.setHours(0, 0, 0, 0);
-              const filtrarPorTiempo = (list) => {
-                if (modalGestoFiltroTiempo === 'Todas') return list;
-                return list.filter(t => {
-                  const fe = t.fechaHoraEjecucion ? new Date(t.fechaHoraEjecucion) : null;
-                  if (!fe) return false;
-                  fe.setHours(0, 0, 0, 0);
-                  switch (modalGestoFiltroTiempo) {
-                    case 'Hoy': return fe.getTime() === hoy.getTime();
-                    case 'Semana': { const fin = new Date(hoy); fin.setDate(fin.getDate() + 7); return fe >= hoy && fe < fin; }
-                    case 'Mes': { const finMes = new Date(hoy); finMes.setMonth(finMes.getMonth() + 1); return fe >= hoy && fe < finMes; }
-                    default: return true;
-                  }
-                });
-              };
-              const filtrarPorTipo = (list) => (modalGestoFiltroTipo === 'Todas') ? list : list.filter(t => (t.clasificacion || 'Otro') === modalGestoFiltroTipo);
-              const pendientesFiltradas = filtrarPorTipo(filtrarPorTiempo(pendientes));
-              return (
-                <View style={styles.modalGestoHeader}>
-                  <View style={styles.modalGestoHeaderRow}>
-                    <Text style={styles.modalGestoHeaderTitle}>Gestos de {datosEditados.nombre || 'Contacto'}</Text>
-                    <TouchableOpacity onPress={() => { setModalTareasVisible(false); setCurrentContactForVoice(null); }} hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}>
-                      <Ionicons name="close" size={24} color={COLORES.agua} />
-                    </TouchableOpacity>
-                  </View>
-                  <Text style={styles.modalGestoHeaderSubtitle}>{pendientesFiltradas.length} {pendientesFiltradas.length === 1 ? 'gesto' : 'gestos'}</Text>
-                </View>
-              );
-            })()}
-
-            {/* Desplegables Filtro y Tipo (igual que pestaña Gestos: botones con chevron-down) */}
-            <View style={styles.modalGestoDesplegablesRow}>
-              <View style={styles.modalGestoDesplegableWrap}>
-                <View style={styles.modalGestoDesplegableLabelRow}>
-                  <Ionicons name="filter-outline" size={14} color={COLORES.textoSecundario} />
-                  <Text style={styles.modalGestoDesplegableLabel}>Filtro</Text>
-                </View>
-                <TouchableOpacity style={styles.modalGestoDesplegableButton} onPress={() => setModalGestoDropdownFiltroVisible(true)} activeOpacity={0.7}>
-                  <Text style={styles.modalGestoDesplegableButtonText} numberOfLines={1}>{modalGestoFiltroTiempo}</Text>
-                  <Ionicons name="chevron-down" size={20} color={COLORES.textoSecundario} />
-                </TouchableOpacity>
-              </View>
-              <View style={styles.modalGestoDesplegableWrap}>
-                <View style={styles.modalGestoDesplegableLabelRow}>
-                  <Ionicons name="pricetag-outline" size={14} color={COLORES.textoSecundario} />
-                  <Text style={styles.modalGestoDesplegableLabel}>Tipo</Text>
-                </View>
-                <TouchableOpacity style={styles.modalGestoDesplegableButton} onPress={() => setModalGestoDropdownTipoVisible(true)} activeOpacity={0.7}>
-                  <Text style={styles.modalGestoDesplegableButtonText} numberOfLines={1}>{modalGestoFiltroTipo}</Text>
-                  <Ionicons name="chevron-down" size={20} color={COLORES.textoSecundario} />
-                </TouchableOpacity>
-              </View>
-            </View>
-
-            {/* FABs a la derecha (mic, +, historial) como en pestaña Gestos */}
-            {(() => {
-              const historial = (datosEditados.tareas || []).filter(t => t.completada);
-              return (
-                <View style={styles.modalGestoFabsContainer} pointerEvents="box-none">
-                  <TouchableOpacity
-                    style={styles.modalGestoFabMic}
-                    onPress={async () => {
-                      setVoicePreviewContactoFromModal({ id: datosEditados._id, nombre: datosEditados.nombre || 'Contacto' });
-                      setCurrentContactForVoice(datosEditados);
-                      setModalTareasVisible(false);
-                      setTimeout(async () => {
-                        const { recording, error } = await startRecording();
-                        if (error) Alert.alert('Grabación', error);
-                        else setVoiceRecording(recording);
-                      }, 350);
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="mic" size={24} color="white" />
-                  </TouchableOpacity>
-                  <TouchableOpacity style={styles.modalGestoFabAdd} onPress={() => setModalAgregarGestoPorTextoVisible(true)} activeOpacity={0.8}>
-                    <Ionicons name="add" size={26} color="white" />
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.modalGestoFabHistorial, historial.length === 0 && { opacity: 0.6 }]}
-                    onPress={() => {
-                      if (historial.length > 0) setModalGestoHistorialVisible(true);
-                      else Alert.alert('Historial', 'Aún no hay gestos completados para este contacto.');
-                    }}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons name="time-outline" size={24} color="white" />
-                  </TouchableOpacity>
-                </View>
-              );
-            })()}
-
-            {/* Modales desplegables Filtro y Tipo (como pestaña Gestos) */}
-            <Modal visible={modalGestoDropdownFiltroVisible} transparent animationType="fade" onRequestClose={() => setModalGestoDropdownFiltroVisible(false)}>
-              <View style={styles.modalGestoDropdownOverlay}>
-                <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setModalGestoDropdownFiltroVisible(false)} />
-                <View style={styles.modalGestoDropdownContent}>
-                  <Text style={styles.modalGestoDropdownTitle}>Filtro</Text>
-                  <ScrollView style={styles.modalGestoDropdownList} showsVerticalScrollIndicator={false}>
-                    {['Hoy', 'Semana', 'Mes', 'Todas'].map((op) => (
-                      <TouchableOpacity
-                        key={op}
-                        style={[styles.modalGestoDropdownItem, modalGestoFiltroTiempo === op && styles.modalGestoDropdownItemActive]}
-                        onPress={() => { setModalGestoFiltroTiempo(op); setModalGestoDropdownFiltroVisible(false); }}
-                      >
-                        <Text style={[styles.modalGestoDropdownItemText, modalGestoFiltroTiempo === op && styles.modalGestoDropdownItemTextActive]}>{op}</Text>
-                        {modalGestoFiltroTiempo === op && <Ionicons name="checkmark" size={20} color={COLORES.agua} />}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            </Modal>
-            <Modal visible={modalGestoDropdownTipoVisible} transparent animationType="fade" onRequestClose={() => setModalGestoDropdownTipoVisible(false)}>
-              <View style={styles.modalGestoDropdownOverlay}>
-                <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setModalGestoDropdownTipoVisible(false)} />
-                <View style={styles.modalGestoDropdownContent}>
-                  <Text style={styles.modalGestoDropdownTitle}>Tipo de gesto</Text>
-                  <ScrollView style={styles.modalGestoDropdownList} showsVerticalScrollIndicator={false}>
-                    {['Todas', ...TIPOS_DE_GESTO_DISPLAY].map((op) => (
-                      <TouchableOpacity
-                        key={op}
-                        style={[styles.modalGestoDropdownItem, modalGestoFiltroTipo === op && styles.modalGestoDropdownItemActive]}
-                        onPress={() => { setModalGestoFiltroTipo(op); setModalGestoDropdownTipoVisible(false); }}
-                      >
-                        <Text style={[styles.modalGestoDropdownItemText, modalGestoFiltroTipo === op && styles.modalGestoDropdownItemTextActive]} numberOfLines={1}>{op}</Text>
-                        {modalGestoFiltroTipo === op && <Ionicons name="checkmark" size={20} color={COLORES.agua} />}
-                      </TouchableOpacity>
-                    ))}
-                  </ScrollView>
-                </View>
-              </View>
-            </Modal>
-
-            {/* Lista: Pendientes + Historial (mismo formato que pestaña Gestos) */}
-            <ScrollView
-              ref={modalGestosScrollRef}
-              style={styles.modalGestosScroll}
-              contentContainerStyle={styles.modalGestosScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {(() => {
-                const tareasContacto = datosEditados.tareas || [];
-                const pendientes = tareasContacto.filter(t => !t.completada);
-                const hoy = new Date();
-                hoy.setHours(0, 0, 0, 0);
-                const filtrarPorTiempo = (list) => {
-                  if (modalGestoFiltroTiempo === 'Todas') return list;
-                  return list.filter(t => {
-                    const fe = t.fechaHoraEjecucion ? new Date(t.fechaHoraEjecucion) : null;
-                    if (!fe) return false;
-                    fe.setHours(0, 0, 0, 0);
-                    switch (modalGestoFiltroTiempo) {
-                      case 'Hoy': return fe.getTime() === hoy.getTime();
-                      case 'Semana': { const fin = new Date(hoy); fin.setDate(fin.getDate() + 7); return fe >= hoy && fe < fin; }
-                      case 'Mes': { const finMes = new Date(hoy); finMes.setMonth(finMes.getMonth() + 1); return fe >= hoy && fe < finMes; }
-                      default: return true;
-                    }
-                  });
-                };
-                const filtrarPorTipo = (list) => {
-                  if (modalGestoFiltroTipo === 'Todas') return list;
-                  return list.filter(t => (t.clasificacion || 'Otro') === modalGestoFiltroTipo);
-                };
-                const pendientesFiltradas = filtrarPorTipo(filtrarPorTiempo(pendientes)).sort((a, b) => {
-                  const fa = a.fechaHoraEjecucion ? new Date(a.fechaHoraEjecucion).getTime() : 0;
-                  const fb = b.fechaHoraEjecucion ? new Date(b.fechaHoraEjecucion).getTime() : 0;
-                  return fa - fb;
-                });
-                const historial = tareasContacto.filter(t => t.completada).sort((a, b) => {
-                  const fa = a.fechaHoraCompletado ? new Date(a.fechaHoraCompletado).getTime() : 0;
-                  const fb = b.fechaHoraCompletado ? new Date(b.fechaHoraCompletado).getTime() : 0;
-                  return fb - fa;
-                });
-                const renderGestoCard = (item, idx, esHistorial) => {
-                  const clasificacion = item.clasificacion || 'Otro';
-                  const gestoConfig = getGestoConfig(clasificacion);
-                  const tieneAccion = gestoConfig.action && datosEditados.telefono;
-                  const fechaEjecucion = item.fechaHoraEjecucion ? new Date(item.fechaHoraEjecucion) : null;
-                  const idxOrig = (datosEditados.tareas || []).indexOf(item);
-                  return (
-                    <View key={`${item.fechaHoraCreacion || item._id || idx}-${idxOrig}`} style={[styles.modalGestoTareaItem, item.completada && styles.modalGestoTareaItemCompletada]}>
-                      <View style={styles.modalGestoTareaLeft}>
-                        <TouchableOpacity style={styles.modalGestoEditButton} onPress={() => crearTareaDesdeTarea(item)}>
-                          <Ionicons name="brush-outline" size={22} color={COLORES.agua} />
-                        </TouchableOpacity>
-                        <TouchableOpacity style={styles.modalGestoEditButton} onPress={() => eliminarTarea(idxOrig)}>
-                          <Ionicons name="trash-outline" size={20} color={COLORES.urgente} />
-                        </TouchableOpacity>
-                      </View>
-                      <View style={styles.modalGestoTareaInfo}>
-                        <View style={styles.modalGestoTareaHeader}>
-                          <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-                            <Text style={styles.modalGestoTareaTitulo} numberOfLines={1}>
-                              {gestoConfig.emoji} {gestoConfig.actionLabel ?? clasificacion}
-                            </Text>
-                            {item.recurrencia?.tipo === 'anual' && (
-                              <View style={styles.modalGestoRecurrenteBadge}>
-                                <Text style={styles.modalGestoRecurrenteText}>Anual</Text>
-                              </View>
-                            )}
-                          </View>
-                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                            <TouchableOpacity onPress={() => toggleTareaCompletada(idxOrig)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                              <Ionicons name={item.completada ? 'checkmark-done' : 'checkbox-outline'} size={22} color={item.completada ? COLORES.activo : COLORES.textoSuave} />
-                            </TouchableOpacity>
-                            <Text style={styles.modalGestoTareaContactoDerecha} numberOfLines={1}>
-                              {datosEditados.nombre || '—'}
-                            </Text>
-                          </View>
-                        </View>
-                        {item.audioBase64 ? (
-                          <>
-                            <Text style={[styles.modalGestoTareaDescripcion, item.completada && styles.modalGestoTareaDescripcionCompletada]}>[Nota de voz]</Text>
-                            <TouchableOpacity style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }} onPress={async () => { const r = await playFromBase64(item.audioBase64); if (r.error) Alert.alert('Audio', r.error); }}>
-                              <Ionicons name="play-circle" size={24} color={COLORES.agua} />
-                              <Text style={{ fontSize: 14, color: COLORES.agua }}>Reproducir</Text>
-                            </TouchableOpacity>
-                          </>
-                        ) : (
-                          <Text style={[styles.modalGestoTareaDescripcion, item.completada && styles.modalGestoTareaDescripcionCompletada]} numberOfLines={2}>{item.descripcion}</Text>
-                        )}
-                        {fechaEjecucion && (
-                          <View style={styles.modalGestoTareaMeta}>
-                            <View style={[styles.modalGestoPrioridadBadge, { backgroundColor: getPrioridadColorGesto(fechaEjecucion) }]}>
-                              <Text style={styles.modalGestoPrioridadText}>{formatearFechaGesto(fechaEjecucion)}</Text>
-                            </View>
-                            <View style={styles.modalGestoHoraContainer}>
-                              <Ionicons name="time-outline" size={14} color={COLORES.textoSecundario} />
-                              <Text style={styles.modalGestoHoraText}>{formatearHoraGesto(fechaEjecucion)}</Text>
-                            </View>
-                          </View>
-                        )}
-                        {item.completada && item.fechaHoraCompletado && (
-                          <Text style={styles.modalGestoCompletadaText}>
-                            ✅ {new Date(item.fechaHoraCompletado).toLocaleDateString('es-ES')} {new Date(item.fechaHoraCompletado).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                          </Text>
-                        )}
-                        {tieneAccion ? (
-                          <TouchableOpacity style={[styles.modalGestoAccionButton, { backgroundColor: gestoConfig.color }]} onPress={() => ejecutarAccionGestoContacto(item)} activeOpacity={0.8}>
-                            <Ionicons name={gestoConfig.icon} size={20} color="white" />
-                            <Text style={styles.modalGestoAccionText}>{gestoConfig.actionLabel ?? clasificacion}</Text>
-                          </TouchableOpacity>
-                        ) : (
-                          <View style={[styles.modalGestoAccionButton, styles.modalGestoAccionInactivo]}>
-                            <Text style={styles.modalGestoAccionEmoji}>{gestoConfig.emoji}</Text>
-                            <Text style={styles.modalGestoAccionTextInactivo}>{gestoConfig.actionLabel ?? clasificacion}</Text>
-                          </View>
-                        )}
-                      </View>
-                    </View>
-                  );
-                };
-                return (
-                  <>
-                    {pendientesFiltradas.length === 0 && historial.length === 0 ? (
-                      <View style={styles.emptyInteraccionesState}>
-                        <Ionicons name="heart-outline" size={48} color={COLORES.textoSuave} />
-                        <Text style={styles.emptyInteraccionesText}>No hay gestos para este contacto</Text>
-                        <Text style={[styles.emptyInteraccionesText, { fontSize: 14, marginTop: 4 }]}>Pulsa el micrófono o el + a la derecha para agregar</Text>
-                      </View>
-                    ) : (
-                      <>
-                        {pendientesFiltradas.map((item, i) => renderGestoCard(item, i, false))}
-                        {historial.length > 0 && (
-                          <View onLayout={(e) => { modalGestoHistorialYRef.current = e.nativeEvent.layout.y; }} style={{ marginTop: 16 }}>
-                            <Text style={styles.modalGestoHistorialTitle}>Historial</Text>
-                            {historial.map((item, i) => renderGestoCard(item, i, true))}
-                          </View>
-                        )}
-                      </>
-                    )}
-              </>
-                );
-              })()}
-            </ScrollView>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Modal Agregar gesto por texto (carga manual) - se abre al pulsar + en Gestos del contacto */}
-        <Modal animationType="slide" visible={modalAgregarGestoPorTextoVisible} onRequestClose={() => setModalAgregarGestoPorTextoVisible(false)}>
-          <SafeAreaView style={styles.modalFull}>
-            <View style={styles.modalHeaderImportar}>
-              <Text style={styles.modalTitleImportar}>Agregar gesto</Text>
-              <TouchableOpacity onPress={() => setModalAgregarGestoPorTextoVisible(false)} style={styles.modalCloseButton}>
-                <Ionicons name="close" size={24} color={COLORES.agua} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalGestosDeNombre}>Para {datosEditados.nombre || 'Contacto'}</Text>
-            <ScrollView style={styles.modalGestosScroll} contentContainerStyle={styles.modalGestosScrollContent} showsVerticalScrollIndicator={false}>
-              <View style={styles.nuevaInteraccionContainer}>
-                <Text style={styles.label}>Descripción del gesto</Text>
-                <TextInput
-                  style={styles.inputNuevaInteraccion}
-                  value={textoTarea}
-                  onChangeText={setTextoTarea}
-                  placeholder="Notas del gesto (ej: Preguntar por su perro)..."
-                  multiline={true}
-                />
-                <Text style={styles.label}>Fecha y hora de ejecución</Text>
-                <TouchableOpacity
-                  style={[styles.interaccionFechaButton, styles.interaccionFechaButtonTarea]}
-                  onPress={() => {
-                    setDateModeEjecucion('date');
-                    setShowDatePickerEjecucion(true);
-                    if (!fechaHoraEjecucion || !(fechaHoraEjecucion instanceof Date) || isNaN(fechaHoraEjecucion.getTime())) {
-                      setFechaHoraEjecucion(new Date());
-                    }
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.interaccionFechaButtonIconWrap}>
-                    <Ionicons name="calendar" size={32} color={COLORES.agua} />
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.interaccionFechaButtonHint}>Toca para elegir fecha y hora</Text>
-                    <Text style={[styles.interaccionFechaButtonText, { color: COLORES.texto, fontSize: 14 }]}>
-                      {fechaEjecucionDisplay.toLocaleDateString('es-ES')} · {fechaEjecucionDisplay.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={22} color={COLORES.textoSuave} />
-                </TouchableOpacity>
-                {showDatePickerEjecucion && (
-                  <DateTimePicker
-                    testID="dateTimePickerEjecucion"
-                    value={fechaEjecucionDisplay}
-                    mode={dateModeEjecucion}
-                    is24Hour={true}
-                    display="default"
-                    onChange={(e, d) => {
-                      if (e.type === 'dismissed') { setShowDatePickerEjecucion(false); return; }
-                      const curr = d || new Date();
-                      if (dateModeEjecucion === 'date') {
-                        setFechaHoraEjecucion(curr);
-                        if (Platform.OS === 'android') {
-                          setShowDatePickerEjecucion(false);
-                          setTimeout(() => { setDateModeEjecucion('time'); setShowDatePickerEjecucion(true); }, 100);
-                        } else {
-                          setDateModeEjecucion('time');
-                        }
-                      } else {
-                        setFechaHoraEjecucion(curr);
-                        setShowDatePickerEjecucion(false);
-                      }
-                    }}
-                  />
-                )}
-                <Text style={styles.label}>Clasificación</Text>
-                <SelectorChips
-                  opciones={TIPOS_DE_GESTO_DISPLAY}
-                  seleccionado={clasificacionTarea}
-                  colorActive={COLORES.agua}
-                  onSelect={(v) => setClasificacionTarea(v)}
-                />
-                <TouchableOpacity
-                  style={{ flexDirection: 'row', alignItems: 'center', marginTop: 12, gap: 8 }}
-                  onPress={() => setTareaRecurrenteAnual(!tareaRecurrenteAnual)}
-                >
-                  <Ionicons
-                    name={tareaRecurrenteAnual ? 'checkbox' : 'checkbox-outline'}
-                    size={22}
-                    color={tareaRecurrenteAnual ? COLORES.agua : COLORES.textoSuave}
-                  />
-                  <Text style={[styles.label, { marginBottom: 0, fontSize: 14 }]}>Repetir cada año (ej. cumpleaños)</Text>
-                </TouchableOpacity>
-                {tareaDesdeTarea && (
-                  <Text style={[styles.label, { fontSize: 12, color: COLORES.textoSuave, marginTop: 8 }]}>
-                    Creando gesto desde: {tareaDesdeTarea.descripcion}
-                  </Text>
-                )}
-                <TouchableOpacity
-                  style={[styles.addInteraccionButton, !textoTarea.trim() && styles.addInteraccionButtonDisabled]}
-                  onPress={agregarTarea}
-                  disabled={!textoTarea.trim()}
-                >
-                  <Ionicons name="add-circle" size={20} color="white" />
-                  <Text style={styles.addInteraccionButtonText}>Agregar gesto</Text>
-                </TouchableOpacity>
-              </View>
-            </ScrollView>
-          </SafeAreaView>
-        </Modal>
-
-        {/* Modal Historial de gestos del contacto (solo completados, mismo formato que pestaña Gestos) */}
-        <Modal animationType="slide" visible={modalGestoHistorialVisible} onRequestClose={() => setModalGestoHistorialVisible(false)}>
-          <SafeAreaView style={styles.modalFull}>
-            <View style={styles.modalHeaderImportar}>
-              <Text style={styles.modalTitleImportar}>Historial de gestos</Text>
-              <TouchableOpacity onPress={() => setModalGestoHistorialVisible(false)} style={styles.modalCloseButton}>
-                <Ionicons name="close" size={24} color={COLORES.agua} />
-              </TouchableOpacity>
-            </View>
-            <Text style={styles.modalGestosDeNombre}>{datosEditados.nombre || 'Contacto'}</Text>
-            <ScrollView
-              style={styles.modalGestosScroll}
-              contentContainerStyle={styles.modalGestosScrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {((datosEditados.tareas || []).filter(t => t.completada)).length === 0 ? (
-                <View style={styles.emptyInteraccionesState}>
-                  <Ionicons name="checkmark-done-outline" size={48} color={COLORES.textoSuave} />
-                  <Text style={styles.emptyInteraccionesText}>No hay gestos completados</Text>
-                </View>
-              ) : (
-                (datosEditados.tareas || [])
-                  .filter(t => t.completada)
-                  .sort((a, b) => {
-                    const fa = a.fechaHoraCompletado ? new Date(a.fechaHoraCompletado).getTime() : 0;
-                    const fb = b.fechaHoraCompletado ? new Date(b.fechaHoraCompletado).getTime() : 0;
-                    return fb - fa;
-                  })
-                  .map((item, i) => {
-                    const idx = (datosEditados.tareas || []).indexOf(item);
-                    const clasificacion = item.clasificacion || 'Otro';
-                    const gestoConfig = getGestoConfig(clasificacion);
-                    const fechaEjecucion = item.fechaHoraEjecucion ? new Date(item.fechaHoraEjecucion) : null;
-                    return (
-                      <View key={`hist-${item.fechaHoraCreacion || item._id}-${idx}`} style={[styles.modalGestoTareaItem, styles.modalGestoTareaItemCompletada]}>
-                        <View style={styles.modalGestoTareaLeft}>
-                          <TouchableOpacity style={styles.modalGestoEditButton} onPress={() => toggleTareaCompletada(idx)}>
-                            <Ionicons name="checkmark-done" size={22} color={COLORES.activo} />
-                          </TouchableOpacity>
-                        </View>
-                        <View style={styles.modalGestoTareaInfo}>
-                          <View style={styles.modalGestoTareaHeader}>
-                            <Text style={styles.modalGestoTareaTitulo} numberOfLines={1}>
-                              {gestoConfig.emoji} {gestoConfig.actionLabel ?? clasificacion}
-                            </Text>
-                            <Text style={styles.modalGestoTareaContactoDerecha} numberOfLines={1}>{datosEditados.nombre || '—'}</Text>
-                          </View>
-                          <Text style={[styles.modalGestoTareaDescripcion, styles.modalGestoTareaDescripcionCompletada]} numberOfLines={2}>{item.descripcion}</Text>
-                          {fechaEjecucion && (
-                            <View style={styles.modalGestoTareaMeta}>
-                              <View style={[styles.modalGestoPrioridadBadge, { backgroundColor: getPrioridadColorGesto(fechaEjecucion) }]}>
-                                <Text style={styles.modalGestoPrioridadText}>{formatearFechaGesto(fechaEjecucion)}</Text>
-                              </View>
-                              <View style={styles.modalGestoHoraContainer}>
-                                <Ionicons name="time-outline" size={14} color={COLORES.textoSecundario} />
-                                <Text style={styles.modalGestoHoraText}>{formatearHoraGesto(fechaEjecucion)}</Text>
-                              </View>
-                            </View>
-                          )}
-                          {item.fechaHoraCompletado && (
-                            <Text style={styles.modalGestoCompletadaText}>
-                              ✅ {new Date(item.fechaHoraCompletado).toLocaleDateString('es-ES')} {new Date(item.fechaHoraCompletado).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                            </Text>
-                          )}
-                        </View>
-                      </View>
-                    );
-                  })
-              )}
             </ScrollView>
           </SafeAreaView>
         </Modal>
@@ -3462,11 +2633,12 @@ export default function VinculosScreen() {
         </Modal>
 
         <View style={styles.headerContainer}>
-          <View style={{ flex: 1 }}>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.header}>Vínculos</Text>
+          <View style={styles.headerTopRow}>
+            <View style={styles.headerTitleRow}>
+              <Ionicons name="leaf" size={28} color={COLORES.agua} style={styles.headerIcon} />
+              <Text style={styles.header} numberOfLines={1}>Vínculos</Text>
               {pendingSyncCount > 0 && (
-                <TouchableOpacity 
+                <TouchableOpacity
                   style={styles.pendingSyncIndicator}
                   onPress={async () => {
                     if (isOnline) {
@@ -3480,63 +2652,18 @@ export default function VinculosScreen() {
                 </TouchableOpacity>
               )}
             </View>
-            <Text style={styles.subheader}>Gestiona tus relaciones importantes</Text>
-          </View>
-          <View style={styles.headerRight}>
-            <View style={styles.contadorContainer}>
-              {/* Icono offline si no hay conexión */}
-              {!isOnline && (
-                <Ionicons name="cloud-offline-outline" size={18} color={COLORES.urgente} style={{ marginRight: 4 }} />
-              )}
-              {/* Indicador PC / Nube según ambiente */}
-              <View style={styles.sourceBadge}>
-                <Ionicons name={API_SOURCE_ICON} size={14} color={COLORES.textoSuave} />
-                <Text style={styles.sourceBadgeText}>{API_SOURCE_LABEL}</Text>
-              </View>
-              <Ionicons name="person" size={24} color={COLORES.textoSuave} />
-              <Text style={styles.contador}>{vinculos.length}</Text>
+            <View style={styles.headerRight}>
+              <TouchableOpacity onPress={activarModoJuego} style={{ padding: 8 }} accessibilityLabel="Cultivar relación">
+                <Ionicons name="swap-horizontal-outline" size={24} color={COLORES.textoSuave} />
+              </TouchableOpacity>
+              <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+                <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+              </TouchableOpacity>
+              <NotificationBell />
             </View>
-            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
-              <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
-            </TouchableOpacity>
-            <NotificationBell />
           </View>
+          <Text style={styles.subheader} numberOfLines={1}>Gestiona tus relaciones personales</Text>
         </View>
-        
-        {/* Leyenda mejorada con contadores */}
-        {(() => {
-          const contadores = vinculos.reduce((acc, contacto) => {
-            const degradacion = calcularDegradacion(contacto);
-            const color = obtenerColorDegradacion(degradacion.nivel);
-            if (color === COLORES.activo) acc.activo++;
-            else if (color === COLORES.atencion) acc.atencion++;
-            else if (color === COLORES.urgente) acc.urgente++;
-            return acc;
-          }, { activo: 0, atencion: 0, urgente: 0 });
-          
-          return (
-            <View style={[styles.leyenda, { zIndex: 1 }]}>
-              <View style={styles.leyendaItem}>
-                <View style={[styles.leyendaCirculo, { backgroundColor: COLORES.activo }]}>
-                  <Text style={styles.leyendaNumero}>{contadores.activo}</Text>
-                </View>
-                <Text style={styles.leyendaTexto}>Activo</Text>
-              </View>
-              <View style={styles.leyendaItem}>
-                <View style={[styles.leyendaCirculo, { backgroundColor: COLORES.atencion }]}>
-                  <Text style={styles.leyendaNumero}>{contadores.atencion}</Text>
-                </View>
-                <Text style={styles.leyendaTexto}>Requiere atención</Text>
-              </View>
-              <View style={styles.leyendaItem}>
-                <View style={[styles.leyendaCirculo, { backgroundColor: COLORES.urgente }]}>
-                  <Text style={styles.leyendaNumero}>{contadores.urgente}</Text>
-                </View>
-                <Text style={styles.leyendaTexto}>Urgente</Text>
-              </View>
-            </View>
-          );
-        })()}
 
         <FlatList
           data={[...vinculos].sort((a, b) => {
@@ -3549,14 +2676,17 @@ export default function VinculosScreen() {
           keyExtractor={(item, index) => (item._id || item.telefono || index).toString()}
           numColumns={3}
           contentContainerStyle={styles.grid}
+          columnWrapperStyle={styles.gridRow}
           onRefresh={cargarVinculos}
           refreshing={false}
           showsVerticalScrollIndicator={false}
           style={{ zIndex: 1 }}
           ListEmptyComponent={
             <View style={styles.emptyState}>
-              <Ionicons name="people-outline" size={80} color={COLORES.textoSuave} />
-              <Text style={styles.emptyText}>No hay vínculos para mostrar</Text>
+              <View style={styles.emptyStateIconWrap}>
+                <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
+              </View>
+              <Text style={styles.emptyText}>No hay vínculos aún</Text>
               <Text style={styles.emptySubtext}>Toca el botón para descubrir contactos</Text>
             </View>
           }
@@ -3684,7 +2814,7 @@ export default function VinculosScreen() {
                         >
                           <Ionicons name="calendar" size={16} color={COLORES.agua} />
                           <Text style={styles.interaccionFechaButtonText}>
-                            {fechaHoraInteraccionRegar ? `${fechaHoraInteraccionRegar.toLocaleDateString('es-ES')} ${fechaHoraInteraccionRegar.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}` : 'Fecha/Hora'}
+                            {fechaHoraInteraccionRegar ? `${fechaHoraInteraccionRegar.toLocaleDateString('es-ES')} ${formatTime12h(fechaHoraInteraccionRegar)}` : 'Fecha/Hora'}
                           </Text>
                         </TouchableOpacity>
                       </View>
@@ -3857,17 +2987,30 @@ const styles = StyleSheet.create({
     color: COLORES.atencion,
   },
   headerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
+    flexDirection: 'column',
     marginHorizontal: 20,
     marginTop: 8,
     marginBottom: 20,
   },
+  headerTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  headerTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 4,
+  },
+  headerIcon: {
+    marginRight: 2,
+  },
   headerRight: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12,
+    gap: 4,
   },
   notificacionesButton: {
     position: 'relative',
@@ -3989,16 +3132,16 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   header: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: '700',
     color: COLORES.texto,
     letterSpacing: -0.5,
-    marginBottom: 4,
   },
   subheader: {
     fontSize: 14,
     color: COLORES.textoSuave,
     fontWeight: '400',
+    flexShrink: 1,
   },
   contadorContainer: {
     flexDirection: 'row',
@@ -4059,13 +3202,19 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
   },
   grid: {
-    paddingHorizontal: 15,
-    paddingBottom: 100,
-    paddingTop: 8,
+    paddingHorizontal: GRID_PADDING_H,
+    paddingTop: 16,
+    paddingBottom: 140,
+  },
+  gridRow: {
+    justifyContent: 'center',
+    marginBottom: 24,
+    paddingHorizontal: GRID_ROW_PADDING_H,
   },
   burbujaContainer: {
     width: BUBBLE_SIZE,
-    margin: 6,
+    marginHorizontal: BUBBLE_MARGIN_H,
+    marginVertical: 6,
     alignItems: 'center',
     overflow: 'visible',
   },
@@ -4095,6 +3244,32 @@ const styles = StyleSheet.create({
     elevation: 6,
     position: 'relative',
     overflow: 'hidden',
+  },
+  /** Círculo azul único (color app), sin anillos exteriores */
+  burbujaAzul: {
+    width: BUBBLE_SIZE_INNER,
+    height: BUBBLE_SIZE_INNER,
+    borderRadius: BUBBLE_RADIUS,
+    backgroundColor: COLORES.burbujaFondo,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: COLORES.agua,
+    shadowColor: COLORES.sombra,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 6,
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  burbujaInicialAzul: {
+    width: BUBBLE_SIZE_IMAGE,
+    height: BUBBLE_SIZE_IMAGE,
+    borderRadius: BUBBLE_RADIUS_IMAGE,
+    backgroundColor: COLORES.aguaClaro,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   burbujaGradiente: {
     position: 'absolute',
@@ -4127,9 +3302,9 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   burbujaNombre: {
-    marginTop: 8,
-    fontSize: 12,
-    fontWeight: '600',
+    marginTop: 12,
+    fontSize: 15,
+    fontWeight: '700',
     textAlign: 'center',
     maxWidth: BUBBLE_SIZE,
     letterSpacing: 0.2,
@@ -4147,11 +3322,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2.5,
-    shadowColor: COLORES.atencion,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
     zIndex: 10,
   },
   badgePrioridad: {
@@ -4165,14 +3335,9 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     borderWidth: 2.5,
-    shadowColor: COLORES.urgente,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
     zIndex: 10,
   },
-  // Círculo exterior rojo sutil para contactos con alta importancia
+  // Anillo exterior suave para alta importancia (muted, no invasivo)
   burbujaAnilloPrioridad: {
     position: 'absolute',
     left: -4,
@@ -4180,10 +3345,43 @@ const styles = StyleSheet.create({
     width: BUBBLE_SIZE_INNER + 8,
     height: BUBBLE_SIZE_INNER + 8,
     borderRadius: (BUBBLE_SIZE_INNER + 8) / 2,
-    borderWidth: 2,
-    borderColor: 'rgba(239, 83, 80, 0.55)',
+    borderWidth: 1.2,
     backgroundColor: 'transparent',
     zIndex: 0,
+  },
+  // Contenedor para chispa "requiere atención" (arriba a la derecha del círculo)
+  badgeChispaContainer: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    zIndex: 10,
+  },
+  badgeGrupoContainer: {
+    position: 'absolute',
+    top: 2,
+    right: 2,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 3,
+    zIndex: 10,
+  },
+  badgeIconoMuted: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORES.burbujaFondo,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: COLORES.burbujaBorde,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.05,
+    shadowRadius: 1.5,
+    elevation: 1,
+  },
+  badgeIconoMutedTouchable: {
+    zIndex: 11,
   },
   badgeRegar: {
     position: 'absolute',
@@ -4195,13 +3393,7 @@ const styles = StyleSheet.create({
     height: 36,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORES.agua,
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6,
     borderWidth: 2.5,
-    borderColor: COLORES.agua,
     zIndex: 10,
   },
   badgeRegarTouchable: {
@@ -4213,16 +3405,32 @@ const styles = StyleSheet.create({
     borderRadius: 18,
     zIndex: 11,
   },
+  // Badge de tiempo minimalista en la parte inferior del círculo (neutro, sin estrés)
+  degradacionBadgeMinimal: {
+    position: 'absolute',
+    bottom: -6,
+    left: '50%',
+    marginLeft: -24,
+    width: 48,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+    backgroundColor: COLORES.badgeTiempoFondo || COLORES.fondoSecundario,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 5,
+  },
+  degradacionTextoMinimal: {
+    color: COLORES.badgeTiempoTexto || COLORES.textoSecundario,
+    fontSize: 10,
+    fontWeight: '300',
+    letterSpacing: 0.3,
+  },
   degradacionBadge: {
     marginTop: 6,
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 10,
-    shadowColor: COLORES.sombra,
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-    elevation: 3,
   },
   degradacionTexto: {
     color: '#FFFFFF',
@@ -4235,25 +3443,75 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
-    paddingTop: 100,
+    paddingTop: 60,
+  },
+  emptyStateIconWrap: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    backgroundColor: COLORES.fondoSecundario,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 28,
+    opacity: 0.85,
   },
   emptyText: {
-    fontSize: 18,
-    fontWeight: '600',
+    fontSize: 20,
+    fontWeight: '700',
     color: COLORES.texto,
-    marginTop: 20,
+    marginTop: 8,
     textAlign: 'center',
   },
   emptySubtext: {
-    fontSize: 14,
-    color: COLORES.textoSuave,
-    marginTop: 10,
+    fontSize: 15,
+    color: COLORES.textoSecundario,
+    marginTop: 14,
     textAlign: 'center',
+    lineHeight: 23,
   },
-  // Estilos del modo swipe/descubrir
+  skeletonGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    paddingHorizontal: 28,
+    paddingTop: 20,
+  },
+  skeletonBurbuja: {
+    width: (SCREEN_WIDTH - 56 - 36) / 3,
+    alignItems: 'center',
+    marginBottom: 28,
+  },
+  skeletonCircle: {
+    width: BUBBLE_SIZE_INNER,
+    height: BUBBLE_SIZE_INNER,
+    borderRadius: BUBBLE_RADIUS,
+    backgroundColor: COLORES.fondoSecundario,
+    opacity: 0.6,
+  },
+  skeletonNombre: {
+    width: '75%',
+    height: 14,
+    borderRadius: 7,
+    backgroundColor: COLORES.fondoTerciario,
+    marginTop: 12,
+    opacity: 0.8,
+  },
+  skeletonLoaderFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 12,
+  },
+  skeletonLoaderText: {
+    fontSize: 14,
+    color: COLORES.textoSecundario,
+    fontWeight: '400',
+  },
+  // Estilos del modo swipe/descubrir (fondo secundario del app: armónico, poco ruido, FAB micrófono visible)
   gameContainer: {
     flex: 1,
-    backgroundColor: COLORES.urgente,
+    backgroundColor: COLORES.fondoSecundario,
     paddingTop: 40,
     alignItems: 'center',
   },
@@ -4270,13 +3528,13 @@ const styles = StyleSheet.create({
   exitText: {
     fontWeight: 'bold',
     fontSize: 16,
-    color: 'white',
+    color: COLORES.texto,
     marginLeft: 5,
   },
   gameTitle: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: 'white',
+    color: COLORES.texto,
     marginBottom: 20,
     textAlign: 'center',
   },
@@ -4423,7 +3681,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     marginTop: 6,
   },
-  // Indicador de señal (barras) de atención: gris y se pinta de verde según porcentaje
+  // Indicador de 4 corazones de atención: outline gris, relleno verde según porcentaje
   signalAtencionTouchable: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -4433,21 +3691,36 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     marginTop: 8,
   },
-  signalAtencionBarras: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: 4,
-    height: 38,
+  signalAtencionHeartWrap: {
+    width: 28,
+    height: 28,
+    position: 'relative',
   },
-  signalAtencionBarra: {
-    width: 6,
-    borderRadius: 2,
-    minHeight: 8,
+  signalAtencionHeartOutline: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  signalAtencionHeartFilledWrap: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+  },
+  signalAtencionHeartFilled: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
   },
   signalAtencionPorcentaje: {
     fontSize: 11,
     fontWeight: '700',
     marginTop: 6,
+  },
+  signalAtencionLabel: {
+    fontSize: 10,
+    color: COLORES.textoSuave,
+    marginTop: 2,
+    letterSpacing: 0.2,
   },
   modalFull: {
     flex: 1,
@@ -5061,34 +4334,34 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: COLORES.urgente, // Rojo urgente
+    backgroundColor: COLORES.agua,
     justifyContent: 'center',
     alignItems: 'center',
-    shadowColor: COLORES.urgente,
+    shadowColor: COLORES.agua,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
     elevation: 10,
   },
   floatingButtonImport: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: COLORES.saludable,
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 30,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 20,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
-    shadowRadius: 8,
+    shadowRadius: 6,
     elevation: 8,
   },
   floatingButtonImportText: {
     color: 'white',
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: '600',
-    marginLeft: 8,
-    letterSpacing: 0.3,
+    marginLeft: 6,
+    letterSpacing: 0.2,
   },
   // Estilos para modal de interacciones
   iconosAccionContainer: {
@@ -5418,7 +4691,7 @@ const styles = StyleSheet.create({
   },
   modalGestosScrollContent: {
     paddingHorizontal: 20,
-    paddingBottom: 180,
+    paddingBottom: 24,
   },
   modalGestoDesplegablesRow: {
     flexDirection: 'row',
@@ -5456,53 +4729,6 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     color: COLORES.texto,
     flex: 1,
-  },
-  modalGestoFabsContainer: {
-    position: 'absolute',
-    right: 16,
-    bottom: 180,
-    alignItems: 'center',
-    gap: 12,
-    zIndex: 10,
-  },
-  modalGestoFabMic: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORES.urgente || '#C62828',
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalGestoFabAdd: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORES.agua,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
-  },
-  modalGestoFabHistorial: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: COLORES.textoSecundario,
-    justifyContent: 'center',
-    alignItems: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
   },
   modalGestoDropdownOverlay: {
     flex: 1,

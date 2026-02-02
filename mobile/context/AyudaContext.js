@@ -2,7 +2,7 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AyudaContext = createContext(null);
 
-export function AyudaProvider({ children }) {
+function AyudaProvider({ children }) {
   const [visible, setVisible] = useState(false);
   const openAyuda = () => setVisible(true);
   const closeAyuda = () => setVisible(false);
@@ -13,10 +13,13 @@ export function AyudaProvider({ children }) {
   );
 }
 
-export function useAyuda() {
+function useAyuda() {
   const ctx = useContext(AyudaContext);
   if (!ctx) {
     return { visible: false, openAyuda: () => {}, closeAyuda: () => {} };
   }
   return ctx;
 }
+
+export { AyudaProvider, useAyuda };
+export default { AyudaProvider, useAyuda };

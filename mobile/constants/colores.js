@@ -28,12 +28,25 @@ export const COLORES = {
   // Estados - Rojo suave para urgente
   urgente: '#EF5350', // Rojo suave
   urgenteClaro: '#FFEBEE', // Rojo muy claro
+
+  // Anillos/badges muted (minimalismo empático: informativos, no invasivos)
+  mutedActivo: '#A5D6A7',     // Verde muy suave
+  mutedAtencion: '#FFCC80',   // Naranja muy suave
+  mutedUrgente: '#EF9A9A',    // Rojo muy suave
+  mutedAgua: '#90CAF9',       // Azul pastel
+  badgeTiempoFondo: '#E8ECF0', // Gris suave / neutro (sin estrés)
+  badgeTiempoTexto: '#5A6C7D', // Gris medio
+  // Anillo "alta importancia" suave (no rojo de alarma)
+  ringAlta: 'rgba(129, 212, 250, 0.6)', // Azul pastel discreto
   
   // Elementos UI
   burbujaFondo: '#FFFFFF',
   burbujaBorde: '#E0E0E0',
   sombra: 'rgba(0, 0, 0, 0.08)',
   sombraSuave: 'rgba(0, 0, 0, 0.04)',
+
+  // FAB armonizado (evitar rojo estrés salvo peligro)
+  saludable: '#66BB6A', // Verde para acciones positivas (importar, descubrir)
   
   // Decoración (muy sutil)
   decoracion: 'rgba(79, 195, 247, 0.05)', // Azul celeste muy suave

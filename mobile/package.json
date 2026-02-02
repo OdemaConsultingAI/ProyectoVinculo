@@ -8,7 +8,9 @@
     "start:online": "expo start",
     "android": "expo start --android --tunnel",
     "ios": "expo start --ios --tunnel",
-    "web": "expo start --web --offline"
+    "web": "expo start --web --offline",
+    "build:apk": "eas build --platform android --profile preview",
+    "build:apk:prod": "eas build --platform android --profile production"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.1.0",

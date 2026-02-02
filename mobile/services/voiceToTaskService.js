@@ -397,11 +397,12 @@ export async function uploadVoiceTemp(fileUri) {
  * Transcribe la nota temporal y clasifica (interacción vs tarea) con GPT-4o-mini.
  * Usa POST /api/ai/voice-temp/transcribe (transcribe + extract con prompt dinámico).
  * @param {string} tempId - ID devuelto por uploadVoiceTemp
+ * @param {'gesto'|'momento'} [tipo] - Tipo elegido antes de grabar; el backend usa prompt distinto (gesto=tareas, momento=situaciones pasadas).
  * @returns {Promise<{ success: true, texto: string, tipo: string, vinculo: string, tarea: string, descripcion: string, fecha: string, contactoId?: string, contactoNombre?: string, model?: string } | { success: false, error: string }>}
  */
-export async function transcribeVoiceTemp(tempId) {
+export async function transcribeVoiceTemp(tempId, tipo) {
   const url = `${VOICE_TEMP_URL}/transcribe`;
-  log('1/4 transcribeVoiceTemp iniciado | tempId:', tempId, '| POST a:', url);
+  log('1/4 transcribeVoiceTemp iniciado | tempId:', tempId, '| tipo:', tipo, '| POST a:', url);
   if (!tempId || typeof tempId !== 'string') {
     log('2/4 ERROR: tempId vacío o inválido');
     return { success: false, error: 'Falta id de nota temporal.' };
@@ -413,7 +414,9 @@ export async function transcribeVoiceTemp(tempId) {
   }
   log('2/4 Token OK');
   try {
-    log('3/4 POST request a:', url, 'body: { tempId }');
+    const body = { tempId: tempId.trim() };
+    if (tipo === 'gesto' || tipo === 'momento') body.tipo = tipo;
+    log('3/4 POST request a:', url, 'body:', JSON.stringify(body));
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -421,7 +424,7 @@ export async function transcribeVoiceTemp(tempId) {
         'Content-Type': 'application/json',
         Accept: 'application/json',
       },
-      body: JSON.stringify({ tempId: tempId.trim() }),
+      body: JSON.stringify(body),
     });
     const rawText = await response.text();
     let data = {};

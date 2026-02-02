@@ -597,6 +597,75 @@ export const saveDesahogoFromVoice = async (tempId) => {
   }
 };
 
+/** Guardar desahogo desde texto (lápiz; sin audio). */
+export const saveDesahogoFromText = async (texto) => {
+  if (!isOnline) throw new Error('Necesitas conexión para guardar en Mi Refugio.');
+  const url = `${REFUGIO_URL}/desahogo`;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ texto: typeof texto === 'string' ? texto.trim() : '' }),
+    });
+    const result = await response.json();
+    return { success: true, desahogo: result.desahogo };
+  } catch (err) {
+    const msg = err.response?.data?.error || err.message;
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el desahogo.');
+  }
+};
+
+/** Añadir interacción (momento) desde texto (lápiz; sin tempId). fechaHora opcional (Date o ISO). */
+export const saveInteractionFromText = async (contactoId, descripcion, fechaHora = null) => {
+  if (!isOnline) throw new Error('Necesitas conexión.');
+  const url = `${API_URL}/${contactoId}/interacciones/from-text`;
+  const body = { descripcion: typeof descripcion === 'string' ? descripcion.trim() : '' };
+  if (fechaHora) body.fechaHora = typeof fechaHora === 'string' ? fechaHora : (fechaHora?.toISOString?.() || new Date(fechaHora).toISOString());
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const savedContact = await response.json();
+    const cachedContacts = await loadContactsFromCache();
+    const finalContacts = cachedContacts.map(c =>
+      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+    );
+    await saveContactsToCache(finalContacts);
+    return { success: true, contacto: savedContact };
+  } catch (err) {
+    const msg = err.response?.data?.error || err.message;
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el momento.');
+  }
+};
+
+/** Añadir tarea (gesto) desde texto (lápiz; sin tempId). */
+export const saveTaskFromText = async (contactoId, descripcion, fechaHoraEjecucion, clasificacion = 'Otro') => {
+  if (!isOnline) throw new Error('Necesitas conexión.');
+  const url = `${API_URL}/${contactoId}/tareas/from-text`;
+  const body = { descripcion: typeof descripcion === 'string' ? descripcion.trim() : '' };
+  if (fechaHoraEjecucion) body.fechaHoraEjecucion = typeof fechaHoraEjecucion === 'string' ? fechaHoraEjecucion : fechaHoraEjecucion.toISOString?.() || new Date(fechaHoraEjecucion).toISOString();
+  if (clasificacion) body.clasificacion = clasificacion;
+  try {
+    const response = await fetchWithAuth(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    const savedContact = await response.json();
+    const cachedContacts = await loadContactsFromCache();
+    const finalContacts = cachedContacts.map(c =>
+      c._id === contactoId ? { ...savedContact, _isLocal: false, _pendingSync: false } : c
+    );
+    await saveContactsToCache(finalContacts);
+    return { success: true, contacto: savedContact };
+  } catch (err) {
+    const msg = err.response?.data?.error || err.message;
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar la huella.');
+  }
+};
+
 /** Listar desahogos del usuario (Mi Refugio). */
 export const loadDesahogos = async () => {
   if (!isOnline) {
@@ -649,7 +718,7 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
   if (fechaHoraEjecucion) body.fechaHoraEjecucion = typeof fechaHoraEjecucion === 'string' ? fechaHoraEjecucion : fechaHoraEjecucion.toISOString?.() || new Date(fechaHoraEjecucion).toISOString();
   if (clasificacion) body.clasificacion = clasificacion;
   const url = `${API_URL}/${contactoId}/tareas/from-voice`;
-  console.log('[VoiceTemp] POST guardar gesto →', url, '| contactoId:', contactoId);
+  console.log('[VoiceTemp] POST guardar huella →', url, '| contactoId:', contactoId);
   try {
     const response = await fetchWithAuth(url, {
       method: 'POST',
@@ -668,7 +737,7 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
     const data = err.response?.data || {};
     const msg = data.error || data.message || err.message;
     if (status === 404) {
-      console.warn('[VoiceTemp] 404 guardar gesto | url:', url, '| body:', JSON.stringify(data));
+      console.warn('[VoiceTemp] 404 guardar huella | url:', url, '| body:', JSON.stringify(data));
       checkApiVersionOn404();
       if (msg && typeof msg === 'string' && (msg.includes('no encontrada') || msg.includes('borrada'))) {
         throw new Error('La nota ya no está disponible. Graba de nuevo y guarda en seguida.');
@@ -678,6 +747,6 @@ export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, 
       }
       throw new Error(MSG_404_BACKEND_DESACTUALIZADO);
     }
-    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar el gesto.');
+    throw new Error(typeof msg === 'string' ? msg : 'Error al guardar la huella.');
   }
 };

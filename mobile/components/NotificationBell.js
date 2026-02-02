@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 4,
     right: 4,
-    backgroundColor: COLORES.urgente,
+    backgroundColor: '#F5B800',
     borderRadius: 10,
     minWidth: 18,
     height: 18,

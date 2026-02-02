@@ -1,53 +1,79 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Modal,
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  ScrollView,
   Pressable,
+  Dimensions,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import { useAyuda } from '../context/AyudaContext';
 
+const { height: SCREEN_HEIGHT } = Dimensions.get('window');
+
 const SECCIONES = [
   {
     id: 'vinculos',
     icono: 'leaf',
     titulo: 'Vínculos',
-    texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: toca la burbuja para ver su ficha (momentos compartidos, gestos pendientes, llamar o WhatsApp). El anillo rojo en una burbuja indica alta importancia. Puedes agregar momentos y gestos desde el icono del contacto o desde la pestaña Gestos.',
+    texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: toca la burbuja para ver su ficha (momentos compartidos, atenciones pendientes, llamar o WhatsApp). Puedes agregar momentos y atenciones desde el icono del contacto o desde la pestaña Atenciones.',
   },
   {
-    id: 'gestos',
-    icono: 'heart',
-    titulo: 'Gestos',
-    texto: 'Los gestos son acciones que quieres hacer por alguien (regar, llamar, quedar…). Aquí ves los gestos pendientes y los completados. Puedes filtrar por contacto y agregar gestos eligiendo a la persona; también puedes guardar una nota de voz como gesto. Las notificaciones te avisan de gestos pendientes.',
+    id: 'atenciones',
+    icono: 'footsteps-outline',
+    titulo: 'Atenciones',
+    texto: 'Las atenciones son acciones que quieres hacer por alguien (regar, llamar, quedar…). Aquí ves las atenciones pendientes y las completadas. Puedes filtrar por contacto y agregar atenciones eligiendo a la persona; también puedes guardar una nota de voz como atención. Las notificaciones te avisan de atenciones pendientes.',
+  },
+  {
+    id: 'huellas',
+    icono: 'footsteps-outline',
+    titulo: 'Huellas',
+    texto: 'Las huellas son los momentos que compartes con alguien (almorzar, llamar, quedar…). Aquí ves todas tus huellas ordenadas por fecha. Puedes filtrar por tiempo y por contacto, y agregar nuevas desde el botón +. Toca una huella para editarla.',
   },
   {
     id: 'refugio',
     icono: 'archive',
     titulo: 'Mi Refugio',
-    texto: 'Espacio solo tuyo para desahogos en voz. Graba una nota de voz y guárdala como Desahogo: la app la transcribe y sugiere una etiqueta emocional (calma, estrés, gratitud, etc.), sin crear tareas ni gestos. Escucha Retrospectiva: vuelve a escuchar un desahogo guardado. El Espejo: resumen semanal de tu estado de ánimo con IA.',
+    texto: 'Espacio solo tuyo para desahogos en voz. Graba una nota de voz y guárdala como Desahogo: la app la transcribe y sugiere una etiqueta emocional (calma, estrés, gratitud, etc.), sin crear tareas ni atenciones. Escucha Retrospectiva: vuelve a escuchar un desahogo guardado. El Espejo: resumen semanal de tu estado de ánimo con IA.',
   },
   {
     id: 'voz',
     icono: 'mic',
     titulo: 'Notas de voz',
-    texto: 'El micrófono flotante sirve para grabar una nota de voz en cualquier momento. La app transcribe el audio y sugiere si es un momento (interacción) o una tarea/gesto, y con qué contacto. Puedes guardar como Gesto (pestaña Gestos), como Momento (para el contacto en Vínculos) o como Desahogo (Mi Refugio, sin vincular a nadie).',
+    texto: 'El micrófono flotante sirve para grabar una nota de voz en cualquier momento. La app transcribe el audio y sugiere si es un momento (interacción) o una atención (tarea), y con qué contacto. Puedes guardar como Atención (pestaña Atenciones), como Momento (para el contacto en Vínculos) o como Desahogo (Mi Refugio, sin vincular a nadie).',
   },
   {
     id: 'config',
     icono: 'settings',
     titulo: 'Configuración',
-    texto: 'Cuenta: ver datos de sesión o cambiar contraseña. Notificaciones: activar o desactivar recordatorios de gestos y avisos. Prueba de notificación: enviar un push de prueba. Cerrar sesión: salir de la app de forma segura.',
+    texto: 'Cuenta: ver datos de sesión o cambiar contraseña. Notificaciones: activar o desactivar recordatorios de atenciones y avisos. Prueba de notificación: enviar un push de prueba. Cerrar sesión: salir de la app de forma segura.',
   },
 ];
 
 export default function AyudaModal() {
   const { visible, closeAyuda } = useAyuda();
+  const [indice, setIndice] = useState(0);
+
+  useEffect(() => {
+    if (visible) setIndice(0);
+  }, [visible]);
+
+  const seccion = SECCIONES[indice];
+  const esPrimera = indice === 0;
+  const esUltima = indice === SECCIONES.length - 1;
+
+  const irAnterior = () => {
+    if (!esPrimera) setIndice((i) => i - 1);
+  };
+
+  const irSiguiente = () => {
+    if (esUltima) closeAyuda();
+    else setIndice((i) => i + 1);
+  };
 
   return (
     <Modal
@@ -70,23 +96,42 @@ export default function AyudaModal() {
                 <Ionicons name="close" size={28} color={COLORES.texto} />
               </TouchableOpacity>
             </View>
-            <ScrollView
-              style={styles.scroll}
-              contentContainerStyle={styles.scrollContent}
-              showsVerticalScrollIndicator={false}
-            >
-              {SECCIONES.map((s) => (
-                <View key={s.id} style={styles.section}>
-                  <View style={styles.sectionHeader}>
-                    <View style={styles.iconWrap}>
-                      <Ionicons name={s.icono} size={22} color={COLORES.agua} />
-                    </View>
-                    <Text style={styles.sectionTitle}>{s.titulo}</Text>
-                  </View>
-                  <Text style={styles.sectionText}>{s.texto}</Text>
+
+            <View style={styles.body}>
+              <View style={styles.sectionHeader}>
+                <View style={styles.iconWrap}>
+                  <Ionicons name={seccion.icono} size={32} color={COLORES.agua} />
                 </View>
-              ))}
-            </ScrollView>
+                <Text style={styles.sectionTitle}>{seccion.titulo}</Text>
+              </View>
+              <Text style={styles.sectionText}>{seccion.texto}</Text>
+            </View>
+
+            <View style={styles.pagination}>
+              <Text style={styles.paginationText}>
+                {indice + 1} / {SECCIONES.length}
+              </Text>
+            </View>
+
+            <View style={styles.footer}>
+              <TouchableOpacity
+                onPress={irAnterior}
+                style={[styles.footerButton, styles.footerButtonLeft, esPrimera && styles.footerButtonDisabled]}
+                disabled={esPrimera}
+                accessibilityLabel="Anterior"
+              >
+                <Ionicons name="chevron-back" size={22} color={esPrimera ? COLORES.textoSuave : COLORES.texto} />
+                <Text style={[styles.footerButtonText, esPrimera && styles.footerButtonTextDisabled]}>Anterior</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                onPress={irSiguiente}
+                style={[styles.footerButton, styles.footerButtonRight]}
+                accessibilityLabel={esUltima ? 'Cerrar' : 'Siguiente'}
+              >
+                <Text style={styles.footerButtonText}>{esUltima ? 'Cerrar' : 'Siguiente'}</Text>
+                {!esUltima && <Ionicons name="chevron-forward" size={22} color={COLORES.agua} />}
+              </TouchableOpacity>
+            </View>
           </SafeAreaView>
         </Pressable>
       </Pressable>
@@ -101,8 +146,8 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
   },
   container: {
+    height: Math.min(SCREEN_HEIGHT * 0.85, 560),
     maxHeight: '90%',
-    minHeight: 320,
     backgroundColor: COLORES.fondo,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
@@ -128,40 +173,80 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: 4,
   },
-  scroll: {
+  body: {
     flex: 1,
-  },
-  scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 16,
-    paddingBottom: 32,
-  },
-  section: {
-    marginBottom: 24,
+    paddingTop: 24,
+    paddingBottom: 16,
+    justifyContent: 'flex-start',
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: 16,
   },
   iconWrap: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     backgroundColor: COLORES.aguaClaro,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
+    marginRight: 14,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 20,
+    fontWeight: '600',
+    color: COLORES.texto,
+    flex: 1,
+  },
+  sectionText: {
+    fontSize: 16,
+    lineHeight: 24,
+    color: COLORES.textoSecundario,
+  },
+  pagination: {
+    paddingHorizontal: 20,
+    paddingVertical: 8,
+    alignItems: 'center',
+  },
+  paginationText: {
+    fontSize: 14,
+    color: COLORES.textoSuave,
+  },
+  footer: {
+    flexDirection: 'row',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    paddingBottom: 24,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: COLORES.burbujaBorde,
+    gap: 12,
+  },
+  footerButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 14,
+    borderRadius: 12,
+    gap: 6,
+  },
+  footerButtonLeft: {
+    backgroundColor: COLORES.fondoSecundario,
+  },
+  footerButtonRight: {
+    backgroundColor: COLORES.aguaClaro,
+  },
+  footerButtonDisabled: {
+    opacity: 0.5,
+  },
+  footerButtonText: {
+    fontSize: 16,
     fontWeight: '600',
     color: COLORES.texto,
   },
-  sectionText: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: COLORES.textoSecundario,
-    paddingLeft: 52,
+  footerButtonTextDisabled: {
+    color: COLORES.textoSuave,
   },
 });

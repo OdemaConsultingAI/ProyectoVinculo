@@ -13,9 +13,11 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
-import { useAyuda } from '../context/AyudaContext';
+import AyudaContext from '../context/AyudaContext';
+const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
 import { loadDesahogos, getDesahogoById, getEspejo } from '../services/syncService';
 import { playFromBase64 } from '../services/voiceToTaskService';
+import { formatTime12h } from '../utils/dateTime';
 
 const ETIQUETAS_EMOCIONALES = ['Calma', 'Estrés', 'Gratitud', 'Tristeza', 'Alegre', 'Depresivo'];
 const EMOTION_COLORS = {
@@ -35,9 +37,9 @@ function formatFecha(dateStr) {
   const ayer = new Date(hoy);
   ayer.setDate(ayer.getDate() - 1);
   const sameDay = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-  if (sameDay(d, hoy)) return `Hoy ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
-  if (sameDay(d, ayer)) return `Ayer ${d.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}`;
-  return d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: d.getFullYear() !== hoy.getFullYear() ? 'numeric' : undefined, hour: '2-digit', minute: '2-digit' });
+  if (sameDay(d, hoy)) return `Hoy ${formatTime12h(d)}`;
+  if (sameDay(d, ayer)) return `Ayer ${formatTime12h(d)}`;
+  return `${d.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: d.getFullYear() !== hoy.getFullYear() ? 'numeric' : undefined })} ${formatTime12h(d)}`;
 }
 
 export default function MiRefugioScreen() {

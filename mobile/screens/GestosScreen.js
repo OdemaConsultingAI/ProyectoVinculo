@@ -24,13 +24,14 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { COLORES } from '../constants/colores';
 import { API_URL, fetchWithAuth } from '../constants/api';
-import { API_SOURCE_LABEL, API_SOURCE_ICON } from '../constants/config';
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
 import { getConnectionStatus, getPendingSyncCount, updateContactTareas, updateContactInteracciones, saveInteractionFromVoice, saveTaskFromVoice, saveDesahogoFromVoice } from '../services/syncService';
 import { normalizeForMatch } from '../utils/validations';
+import { formatTime12h } from '../utils/dateTime';
 import { startRecording, stopRecording, playPreviewUri, playFromBase64, uploadVoiceTemp, deleteVoiceTemp, transcribeVoiceTemp } from '../services/voiceToTaskService';
 import NotificationBell from '../components/NotificationBell';
-import { useAyuda } from '../context/AyudaContext';
+import AyudaContext from '../context/AyudaContext';
+const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
 
 const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
 const FILTROS_TIPO = ['Todas', ...TIPOS_DE_GESTO_DISPLAY];
@@ -48,8 +49,10 @@ export default function GestosScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [filtroActivo, setFiltroActivo] = useState('Hoy');
   const [filtroTipoActivo, setFiltroTipoActivo] = useState('Todas');
+  const [filtroContactoId, setFiltroContactoId] = useState(null); // null = Todos
   const [dropdownTiempoVisible, setDropdownTiempoVisible] = useState(false);
   const [dropdownTipoVisible, setDropdownTipoVisible] = useState(false);
+  const [dropdownContactoVisible, setDropdownContactoVisible] = useState(false);
   const [isOnline, setIsOnline] = useState(true);
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [modalHistorialVisible, setModalHistorialVisible] = useState(false);
@@ -316,8 +319,13 @@ export default function GestosScreen() {
       list = list.filter(tarea => (tarea.clasificacion || 'Otro') === filtroTipoActivo);
     }
 
+    // Filtro por contacto
+    if (filtroContactoId) {
+      list = list.filter(tarea => tarea.contactoId === filtroContactoId);
+    }
+
     return list;
-  }, [todasLasTareas, filtroActivo, filtroTipoActivo]);
+  }, [todasLasTareas, filtroActivo, filtroTipoActivo, filtroContactoId]);
 
   const toggleTareaCompletada = async (contactoId, tareaIndex) => {
     try {
@@ -451,22 +459,19 @@ export default function GestosScreen() {
   const guardarNuevaTarea = async () => {
     if (!contactoSeleccionadoParaTarea?._id) return;
     if (!newTaskDescripcion.trim()) {
-      Alert.alert('Atención', 'Describe el gesto.');
-      return;
-    }
-    if (!newTaskFechaEjecucion) {
-      Alert.alert('Atención', 'Elige fecha y hora de ejecución.');
+      Alert.alert('Atención', 'Describe la atención.');
       return;
     }
     const tareasExistentes = Array.isArray(contactoSeleccionadoParaTarea.tareas) ? contactoSeleccionadoParaTarea.tareas : [];
+    const fechaEjecucion = new Date();
     const nuevaTarea = {
       fechaHoraCreacion: new Date(),
       descripcion: newTaskDescripcion.trim(),
-      fechaHoraEjecucion: newTaskFechaEjecucion,
+      fechaHoraEjecucion: fechaEjecucion,
       clasificacion: newTaskClasificacion,
       completada: false,
       ...(newTaskRecurrenteAnual && {
-        recurrencia: { tipo: 'anual', fechaBase: newTaskFechaEjecucion },
+        recurrencia: { tipo: 'anual', fechaBase: fechaEjecucion },
         completadoParaAno: [],
       }),
     };
@@ -477,11 +482,11 @@ export default function GestosScreen() {
         setContactos(prev => prev.map(c => c._id === contactoSeleccionadoParaTarea._id ? result.contacto : c));
         cerrarModalCrearTarea();
       } else {
-        Alert.alert('Error', 'No se pudo guardar el gesto.');
+        Alert.alert('Error', 'No se pudo guardar la atención.');
       }
     } catch (e) {
       console.error('Error guardando nuevo gesto:', e);
-      Alert.alert('Error', 'No se pudo guardar el gesto.');
+      Alert.alert('Error', 'No se pudo guardar la atención.');
     }
   };
 
@@ -506,12 +511,7 @@ export default function GestosScreen() {
     });
   };
 
-  const formatearHora = (fecha) => {
-    return new Date(fecha).toLocaleTimeString('es-ES', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
-    });
-  };
+  const formatearHora = (fecha) => formatTime12h(fecha);
 
   const getPrioridadColor = (fechaEjecucion) => {
     const hoy = new Date();
@@ -666,26 +666,21 @@ export default function GestosScreen() {
       <View style={styles.header}>
         <View style={styles.headerRow}>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
-            <Text style={styles.headerTitle}>Gestos</Text>
-            {!isOnline && (
-              <Ionicons name="cloud-offline-outline" size={18} color={COLORES.urgente} />
-            )}
-            <View style={styles.sourceBadge}>
-              <Ionicons name={API_SOURCE_ICON} size={14} color={COLORES.textoSuave} />
-              <Text style={styles.sourceBadgeText}>{API_SOURCE_LABEL}</Text>
-            </View>
+            <Ionicons name="sparkles" size={24} color={COLORES.agua} />
+            <Text style={styles.headerTitle}>Atenciones</Text>
           </View>
+          <TouchableOpacity onPress={() => setModalHistorialVisible(true)} style={{ padding: 8 }} accessibilityLabel="Historial de gestos">
+            <Ionicons name="time-outline" size={24} color={COLORES.textoSuave} />
+          </TouchableOpacity>
           <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
             <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
           </TouchableOpacity>
           <NotificationBell />
         </View>
-        <Text style={styles.headerSubtitle}>
-          {tareasFiltradas.length} {tareasFiltradas.length === 1 ? 'gesto' : 'gestos'}
-        </Text>
+        <Text style={styles.headerSubtitle}>Pequeños gestos que quieres tener con quienes te importan</Text>
       </View>
 
-      {/* Desplegables: Filtro y Tipo */}
+      {/* Desplegables: Filtro, Tipo, Contacto */}
       <View style={styles.desplegablesRow}>
         <View style={styles.desplegableWrap}>
           <View style={styles.desplegableLabelRow}>
@@ -712,6 +707,22 @@ export default function GestosScreen() {
             activeOpacity={0.7}
           >
             <Text style={styles.desplegableButtonText} numberOfLines={1}>{filtroTipoActivo}</Text>
+            <Ionicons name="chevron-down" size={20} color={COLORES.textoSecundario} />
+          </TouchableOpacity>
+        </View>
+        <View style={styles.desplegableWrap}>
+          <View style={styles.desplegableLabelRow}>
+            <Ionicons name="person-outline" size={14} color={COLORES.textoSecundario} />
+            <Text style={styles.desplegableLabel}>Contacto</Text>
+          </View>
+          <TouchableOpacity
+            style={styles.desplegableButton}
+            onPress={() => setDropdownContactoVisible(true)}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.desplegableButtonText} numberOfLines={1}>
+              {filtroContactoId ? (contactos.find(c => c._id === filtroContactoId)?.nombre || 'Contacto') : 'Todos'}
+            </Text>
             <Ionicons name="chevron-down" size={20} color={COLORES.textoSecundario} />
           </TouchableOpacity>
         </View>
@@ -757,7 +768,7 @@ export default function GestosScreen() {
         <View style={styles.dropdownOverlay}>
           <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDropdownTipoVisible(false)} />
           <View style={styles.dropdownContent}>
-            <Text style={styles.dropdownTitle}>Tipo de gesto</Text>
+                <Text style={styles.dropdownTitle}>Tipo de atención</Text>
             <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
               {FILTROS_TIPO.map((opcion) => (
                 <TouchableOpacity
@@ -777,6 +788,46 @@ export default function GestosScreen() {
         </View>
       </Modal>
 
+      {/* Modal desplegable Contacto */}
+      <Modal
+        visible={dropdownContactoVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setDropdownContactoVisible(false)}
+      >
+        <View style={styles.dropdownOverlay}>
+          <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={() => setDropdownContactoVisible(false)} />
+          <View style={styles.dropdownContent}>
+            <Text style={styles.dropdownTitle}>Buscar por contacto</Text>
+            <ScrollView style={styles.dropdownList} showsVerticalScrollIndicator={false}>
+              <TouchableOpacity
+                style={[styles.dropdownItem, !filtroContactoId && styles.dropdownItemActive]}
+                onPress={() => {
+                  setFiltroContactoId(null);
+                  setDropdownContactoVisible(false);
+                }}
+              >
+                <Text style={[styles.dropdownItemText, !filtroContactoId && styles.dropdownItemTextActive]}>Todos</Text>
+                {!filtroContactoId && <Ionicons name="checkmark" size={20} color={COLORES.agua} />}
+              </TouchableOpacity>
+              {contactos.map((c) => (
+                <TouchableOpacity
+                  key={c._id}
+                  style={[styles.dropdownItem, filtroContactoId === c._id && styles.dropdownItemActive]}
+                  onPress={() => {
+                    setFiltroContactoId(c._id);
+                    setDropdownContactoVisible(false);
+                  }}
+                >
+                  <Text style={[styles.dropdownItemText, filtroContactoId === c._id && styles.dropdownItemTextActive]} numberOfLines={1}>{c.nombre || 'Sin nombre'}</Text>
+                  {filtroContactoId === c._id && <Ionicons name="checkmark" size={20} color={COLORES.agua} />}
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
       {/* Lista de gestos */}
       <FlatList
         data={tareasFiltradas}
@@ -785,15 +836,15 @@ export default function GestosScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="heart-outline" size={64} color={COLORES.textoSuave} />
+            <Ionicons name="footsteps-outline" size={64} color={COLORES.textoSuave} />
             <Text style={styles.emptyText}>
               {filtroActivo === 'Hoy' 
-                ? 'No hay gestos para hoy' 
+                ? 'No hay atenciones para hoy' 
                 : filtroActivo === 'Semana'
-                ? 'No hay gestos esta semana'
+                ? 'No hay atenciones esta semana'
                 : filtroActivo === 'Mes'
-                ? 'No hay gestos este mes'
-                : 'No hay gestos'}
+                ? 'No hay atenciones este mes'
+                : 'No hay atenciones'}
             </Text>
           </View>
         }
@@ -861,7 +912,7 @@ export default function GestosScreen() {
               )}
               {voicePreviewData && (
                 <>
-                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 8, fontWeight: '700' }]}>Así se verá tu gesto</Text>
+                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 8, fontWeight: '700' }]}>Así se verá tu atención</Text>
                   <View style={styles.previewGestoCard}>
                     <View style={styles.previewGestoHeader}>
                       <Text style={styles.previewGestoTipo} numberOfLines={1}>
@@ -880,7 +931,7 @@ export default function GestosScreen() {
                         onPress={() => { setDatePickerModeVoice('date'); setShowDatePickerVoice(true); }}
                       >
                         <Text style={styles.previewGestoFechaText}>
-                          {voicePreviewFechaEjecucion.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · {voicePreviewFechaEjecucion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
+                          {voicePreviewFechaEjecucion.toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })} · {formatTime12h(voicePreviewFechaEjecucion)}
                         </Text>
                         <Ionicons name="calendar-outline" size={16} color={COLORES.texto} />
                       </TouchableOpacity>
@@ -962,15 +1013,15 @@ export default function GestosScreen() {
                       setVoicePreviewTempId(null);
                       setVoicePreviewTranscription(null);
                       setVoiceTranscribing(false);
-                      Alert.alert('Gesto guardado', 'Tu gesto se guardó correctamente. Ya está en la lista.');
+                      Alert.alert('Atención guardada', 'Tu atención se guardó correctamente. Ya está en la lista.');
                     } catch (e) {
                       const isNetwork = !e.message || /red|conexión|network|timeout|fetch/i.test(String(e.message));
                       Alert.alert('Error', isNetwork ? 'Error de conexión. Comprueba internet e intenta de nuevo.' : (e.message || 'No se pudo guardar.'));
                     }
                   }}
               >
-                <Ionicons name="checkmark-done-outline" size={22} color="white" />
-                <Text style={styles.modalVoicePreviewButtonText}>Guardar como gesto</Text>
+                <Ionicons name="heart" size={22} color="white" />
+                <Text style={styles.modalVoicePreviewButtonText}>Guardar como atención</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction]}
@@ -1025,7 +1076,7 @@ export default function GestosScreen() {
                     }
                   }}
                 >
-                  <Ionicons name="chatbubble-outline" size={22} color="white" />
+                  <Ionicons name="sparkles" size={22} color="white" />
                   <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
                 </TouchableOpacity>
                 <TouchableOpacity
@@ -1059,7 +1110,7 @@ export default function GestosScreen() {
                     }
                   }}
                 >
-                  <Ionicons name="archive-outline" size={22} color="white" />
+                  <Ionicons name="document-text-outline" size={22} color="white" />
                   <Text style={styles.modalVoicePreviewButtonText}>Guardar como Desahogo</Text>
                 </TouchableOpacity>
               </>
@@ -1095,7 +1146,7 @@ export default function GestosScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalHistorialContent}>
             <View style={styles.modalHistorialHeader}>
-              <Text style={styles.modalHistorialTitle}>Historial de gestos</Text>
+              <Text style={styles.modalHistorialTitle}>Historial de atenciones</Text>
               <TouchableOpacity onPress={() => setModalHistorialVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
               </TouchableOpacity>
@@ -1106,10 +1157,10 @@ export default function GestosScreen() {
               renderItem={({ item }) => (
                 <View style={styles.historialItem}>
                   <View style={styles.historialItemContent}>
-                    <Text style={styles.historialItemTitulo}>{item.clasificacion || 'Gesto'}</Text>
+                    <Text style={styles.historialItemTitulo}>{item.clasificacion || 'Atención'}</Text>
                     <Text style={styles.historialItemDesc} numberOfLines={1}>{item.audioBase64 ? '[Nota de voz]' : item.descripcion}</Text>
                     <Text style={styles.historialItemMeta}>
-                      {item.contactoNombre} · {item.fechaCompletado.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                      {item.contactoNombre} · {item.fechaCompletado.toLocaleDateString('es-ES', { day: 'numeric', month: 'short', year: 'numeric' })} {formatTime12h(item.fechaCompletado)}
                     </Text>
                   </View>
                   <TouchableOpacity
@@ -1128,7 +1179,7 @@ export default function GestosScreen() {
         </View>
       </Modal>
 
-      {/* Modal Editar Gesto */}
+      {/* Modal Editar Atención */}
       <Modal
         visible={modalEditarVisible}
         animationType="slide"
@@ -1138,7 +1189,7 @@ export default function GestosScreen() {
         <View style={styles.modalOverlay}>
           <View style={styles.modalEditarContent}>
             <View style={styles.modalEditarHeader}>
-              <Text style={styles.modalEditarTitle}>Editar gesto</Text>
+              <Text style={styles.modalEditarTitle}>Editar atención</Text>
               <TouchableOpacity onPress={() => setModalEditarVisible(false)}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
               </TouchableOpacity>
@@ -1161,20 +1212,20 @@ export default function GestosScreen() {
                 style={styles.modalInput}
                 value={editDescripcion}
                 onChangeText={setEditDescripcion}
-                placeholder="Notas del gesto"
+                placeholder="Notas de la atención"
                 placeholderTextColor={COLORES.textoSuave}
                 multiline
               />
               <Text style={styles.modalLabel}>Fecha y hora</Text>
               <TouchableOpacity style={styles.modalDateButton} onPress={() => { setDatePickerMode('date'); setShowDatePicker(true); }}>
-                <Text style={styles.modalDateText}>{editFechaEjecucion.toLocaleDateString('es-ES')} {editFechaEjecucion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}</Text>
+                <Text style={styles.modalDateText}>{editFechaEjecucion.toLocaleDateString('es-ES')} {formatTime12h(editFechaEjecucion)}</Text>
                 <Ionicons name="calendar-outline" size={20} color={COLORES.textoSecundario} />
               </TouchableOpacity>
               {showDatePicker && (
                 <DateTimePicker
                   value={editFechaEjecucion}
                   mode={datePickerMode}
-                  is24Hour
+                  is24Hour={false}
                   display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                   onChange={(e, d) => {
                     if (e.type === 'dismissed') { setShowDatePicker(false); return; }
@@ -1203,7 +1254,7 @@ export default function GestosScreen() {
         </View>
       </Modal>
 
-      {/* Modal Crear Gesto: paso 1 elegir contacto, paso 2 formulario */}
+      {/* Modal Crear Atención: paso 1 elegir contacto, paso 2 formulario */}
       <Modal
         visible={modalCrearTareaVisible}
         animationType="slide"
@@ -1219,7 +1270,7 @@ export default function GestosScreen() {
                   <Text style={styles.modalCrearTareaBackText}>Contactos</Text>
                 </TouchableOpacity>
               ) : (
-                <Text style={styles.modalCrearTareaTitle}>¿Quieres agregar un Gesto?</Text>
+                <Text style={styles.modalCrearTareaTitle}>¿Quieres agregar una Atención?</Text>
               )}
               <TouchableOpacity onPress={cerrarModalCrearTarea}>
                 <Ionicons name="close" size={24} color={COLORES.texto} />
@@ -1301,37 +1352,6 @@ export default function GestosScreen() {
                     placeholderTextColor={COLORES.textoSuave}
                     multiline
                   />
-                  <Text style={styles.modalLabel}>Fecha y hora</Text>
-                  <TouchableOpacity
-                    style={styles.modalDateButton}
-                    onPress={() => { setDatePickerModeCrear('date'); setShowDatePickerCrear(true); }}
-                  >
-                    <Text style={styles.modalDateText}>
-                      {newTaskFechaEjecucion.toLocaleDateString('es-ES')} {newTaskFechaEjecucion.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })}
-                    </Text>
-                    <Ionicons name="calendar-outline" size={20} color={COLORES.textoSecundario} />
-                  </TouchableOpacity>
-                  {showDatePickerCrear && (
-                    <DateTimePicker
-                      value={newTaskFechaEjecucion}
-                      mode={datePickerModeCrear}
-                      minimumDate={new Date()}
-                      is24Hour
-                      display={Platform.OS === 'ios' ? 'spinner' : 'default'}
-                      onChange={(e, d) => {
-                        if (e.type === 'dismissed') { setShowDatePickerCrear(false); return; }
-                        const date = d || newTaskFechaEjecucion;
-                        if (datePickerModeCrear === 'date') {
-                          setNewTaskFechaEjecucion(date);
-                          if (Platform.OS === 'android') setShowDatePickerCrear(false);
-                          else setDatePickerModeCrear('time');
-                        } else {
-                          setNewTaskFechaEjecucion(date);
-                          setShowDatePickerCrear(false);
-                        }
-                      }}
-                    />
-                  )}
                   <View style={[styles.modalRecurrenteRow, { flexDirection: 'row', alignItems: 'center', gap: 12 }]}>
                     <Text style={styles.modalLabel}>Repetir cada año</Text>
                     <TouchableOpacity
@@ -1349,7 +1369,7 @@ export default function GestosScreen() {
                     <Text style={styles.modalCancelText}>Cambiar contacto</Text>
                   </TouchableOpacity>
                   <TouchableOpacity style={styles.modalSaveButton} onPress={guardarNuevaTarea}>
-                    <Text style={styles.modalSaveText}>Guardar gesto</Text>
+                    <Text style={styles.modalSaveText}>Guardar atención</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -1388,7 +1408,7 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   headerTitle: {
-    fontSize: 34,
+    fontSize: 28,
     fontWeight: 'bold',
     color: COLORES.texto,
   },

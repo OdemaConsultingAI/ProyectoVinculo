@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import VinculosScreen from './screens/VinculosScreen';
 import GestosScreen from './screens/GestosScreen';
+import HuellasScreen from './screens/HuellasScreen';
 import MiRefugioScreen from './screens/MiRefugioScreen';
 import ConfiguracionScreen from './screens/ConfiguracionScreen';
 import LoginScreen from './screens/LoginScreen';
@@ -14,7 +15,8 @@ import SplashScreen from './screens/SplashScreen';
 import ErrorBoundary from './components/ErrorBoundary';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
-import { AyudaProvider } from './context/AyudaContext';
+import AyudaContext from './context/AyudaContext';
+const { AyudaProvider } = AyudaContext;
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import AyudaModal from './components/AyudaModal';
 import { isAuthenticated } from './services/authService';
@@ -47,7 +49,7 @@ export default function App() {
       const nav = navigationRef.current;
       if (!nav) return;
       if (tipo === 'gesto') {
-        nav.navigate('Gestos', { contactoId: data.contactoId, refreshGestos: true });
+        nav.navigate('Atenciones', { contactoId: data.contactoId, refreshGestos: true });
       } else if (tipo === 'riego' || tipo === 'cumpleaños' || tipo === 'contacto') {
         nav.navigate('Vínculos', { contactoId: data.contactoId });
       } else if (tipo === 'test') {
@@ -125,8 +127,9 @@ export default function App() {
       <ErrorBoundary>
         <SafeAreaProvider>
           <VoiceGlobalProvider>
-            <View style={styles.root}>
-              <NavigationContainer
+            <AyudaProvider>
+              <View style={styles.root}>
+                <NavigationContainer
                 ref={navigationRef}
                 onStateChange={(state) => {
                   const route = state?.routes?.[state.index];
@@ -142,10 +145,17 @@ export default function App() {
                     }} 
                   />
                   <Tab.Screen 
-                    name="Gestos" 
+                    name="Atenciones" 
                     component={GestosScreen} 
                     options={{ 
-                      tabBarIcon: ({color}) => <Ionicons name="heart" size={24} color={color} /> 
+                      tabBarIcon: ({color}) => <Ionicons name="sparkles" size={24} color={color} /> 
+                    }} 
+                  />
+                  <Tab.Screen 
+                    name="Huellas" 
+                    component={HuellasScreen} 
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="footsteps-outline" size={24} color={color} /> 
                     }} 
                   />
                   <Tab.Screen 
@@ -164,8 +174,10 @@ export default function App() {
                     {() => <ConfiguracionScreen onLogout={handleLogout} />}
                   </Tab.Screen>
                 </Tab.Navigator>
-              </NavigationContainer>
-                <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
+                </NavigationContainer>
+                <View style={styles.voiceOverlayWrapper} pointerEvents="box-none">
+                  <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
+                </View>
                 <AyudaModal />
               </View>
             </AyudaProvider>
@@ -178,4 +190,13 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
+  voiceOverlayWrapper: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    top: 0,
+    bottom: 0,
+    zIndex: 2147483647,
+    elevation: 999999,
+  },
 });

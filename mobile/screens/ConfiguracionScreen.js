@@ -8,6 +8,7 @@ import { getUser, logout, changePassword, upgradeToPremium, getCurrentUser } fro
 import NotificationBell from '../components/NotificationBell';
 
 export default function ConfiguracionScreen({ onLogout }) {
+  const { openAyuda } = useAyuda();
   const [usuario, setUsuario] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
@@ -233,7 +234,7 @@ export default function ConfiguracionScreen({ onLogout }) {
                     await cargarEstadoPush();
                     setActivandoPush(false);
                     if (token) {
-                      Alert.alert('Listo', 'Recibirás recordatorios de gestos y momentos.');
+                      Alert.alert('Listo', 'Recibirás recordatorios de atenciones y momentos.');
                     } else if (!pushPermiso) {
                       Alert.alert(
                         'Permiso necesario',

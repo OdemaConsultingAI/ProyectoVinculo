@@ -19,7 +19,8 @@ const contactoSchema = new mongoose.Schema({
   interacciones: [{
     fechaHora: { type: Date, default: Date.now },
     descripcion: String,
-    audioBase64: { type: String, default: '' } // Nota de voz: audio sin resumir
+    audioBase64: { type: String, default: '' }, // Nota de voz: audio sin resumir
+    emocion: { type: String, default: '' } // Bitácora emocional: Calma, Estrés, Gratitud, Tristeza, Alegre, Depresivo
   }],
   tareas: [{
     fechaHoraCreacion: { type: Date, default: Date.now },

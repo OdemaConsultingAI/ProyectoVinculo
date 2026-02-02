@@ -315,14 +315,14 @@ export default function ContactosScreen() {
                           </View>
                           <View style={styles.taskSection}>
                               <View style={{flexDirection:'row', justifyContent:'space-between', alignItems:'center', marginBottom: 10}}>
-                                 <Text style={styles.sectionTitle}>📌 Próximo gesto / Contexto</Text>
+                                 <Text style={styles.sectionTitle}>📌 Próxima huella / Contexto</Text>
                                  <TouchableOpacity style={styles.dateBtn} onPress={() => { setDateMode('date'); setShowDatePicker(true); }}>
                                      <Ionicons name="calendar" size={16} color="white" />
                                      <Text style={styles.dateBtnText}>{datosEditados.fechaRecordatorio ? new Date(datosEditados.fechaRecordatorio).toLocaleDateString() : "Agendar"}</Text>
                                  </TouchableOpacity>
                               </View>
                               <TextInput style={styles.inputTask} value={datosEditados.proximaTarea} onChangeText={(t) => setDatosEditados({...datosEditados, proximaTarea: t})} placeholder="Ej: Llamar mañana..." multiline={true} />
-                              {showDatePicker && (<DateTimePicker testID="dateTimePicker" value={datosEditados.fechaRecordatorio || new Date()} mode={dateMode} is24Hour={true} display="default" onChange={(e,d) => { if(e.type==='dismissed'){setShowDatePicker(false);return;} const curr=d||new Date(); if(dateMode==='date'){setDatosEditados({...datosEditados,fechaRecordatorio:curr});if(Platform.OS==='android'){setShowDatePicker(false);setTimeout(()=>{setDateMode('time');setShowDatePicker(true);},100);}else{setDateMode('time');}}else{setDatosEditados({...datosEditados,fechaRecordatorio:curr});setShowDatePicker(false);} }} />)}
+                              {showDatePicker && (<DateTimePicker testID="dateTimePicker" value={datosEditados.fechaRecordatorio || new Date()} mode={dateMode} is24Hour={false} display="default" onChange={(e,d) => { if(e.type==='dismissed'){setShowDatePicker(false);return;} const curr=d||new Date(); if(dateMode==='date'){setDatosEditados({...datosEditados,fechaRecordatorio:curr});if(Platform.OS==='android'){setShowDatePicker(false);setTimeout(()=>{setDateMode('time');setShowDatePicker(true);},100);}else{setDateMode('time');}}else{setDatosEditados({...datosEditados,fechaRecordatorio:curr});setShowDatePicker(false);} }} />)}
                           </View>
                           <Text style={styles.label}>Círculo Social</Text><SelectorChips opciones={CLASIFICACIONES} seleccionado={datosEditados.clasificacion} colorActive="#FF9500" onSelect={(v) => setDatosEditados({...datosEditados, clasificacion: v})} />
                           <Text style={styles.label}>Importancia</Text><SelectorChips opciones={PRIORIDADES} seleccionado={datosEditados.prioridad} colorActive="#FF3B30" onSelect={(v) => setDatosEditados({...datosEditados, prioridad: v})} />

@@ -96,8 +96,8 @@ async function sendRemindersGestosHoy() {
       }
     }
     const title = totalGestos === 1
-      ? 'Un gesto pendiente hoy'
-      : `${totalGestos} gestos pendientes hoy`;
+      ? 'Una huella pendiente hoy'
+      : `${totalGestos} huellas pendientes hoy`;
     const body = titulos.slice(0, 3).join(' · ');
     const bodyFinal = titulos.length > 3 ? `${body} y ${titulos.length - 3} más` : body;
 

@@ -26,7 +26,7 @@ const {
   apiLimiter
 } = require('./middleware/rateLimiter');
 const multer = require('multer');
-const { voiceToTaskStructured, transcribe, getVoicePrompt, extractVoiceAction, extractDesahogo, getEspejoSummary, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
+const { voiceToTaskStructured, transcribe, getVoicePrompt, extractGesto, extractMomento, extractDesahogo, getEspejoSummary, calcCostFromUsage, TIPOS_DE_GESTO_DISPLAY, MODEL_VOICE, LIMITE_PETICIONES_GRATIS, COSTE_ESTIMADO_POR_PETICION_USD } = require('./services/aiService');
 const { sendPushToUser } = require('./services/pushService');
 const { sendRemindersGestosHoy } = require('./services/reminderService');
 const PALABRAS_PROHIBIDAS = require('./config/palabrasProhibidas');
@@ -819,26 +819,66 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
 
     const contactos = await Contacto.find({ usuarioId: req.user.id }).select('nombre _id').lean();
     const nombresContactos = contactos.map(c => (c.nombre || '').trim()).filter(Boolean);
-    const extracted = await extractVoiceAction(textoTrim, nombresContactos);
+    const tipoPedido = (req.body && req.body.tipo === 'momento') ? 'momento' : 'gesto';
+
+    if (tipoPedido === 'momento') {
+      const extracted = await extractMomento(textoTrim, nombresContactos);
+      const vinculoNorm = (extracted.vinculo || '').toLowerCase().trim();
+      const contactoMatch = contactos.find(c => (c.nombre || '').toLowerCase().trim() === vinculoNorm);
+      const contactoId = contactoMatch ? contactoMatch._id.toString() : null;
+      const contactoNombre = contactoMatch ? (contactoMatch.nombre || extracted.vinculo) : (extracted.vinculo || 'Sin asignar');
+      const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
+      await incrementAIUsage(usuario, true, costUsd);
+      return res.json({
+        texto: textoTrim,
+        tipo: 'interacción',
+        vinculo: extracted.vinculo,
+        tarea: '',
+        descripcion: textoTrim,
+        fecha: extracted.fecha || new Date().toISOString().slice(0, 10),
+        hora: extracted.hora || '09:00',
+        emocion: extracted.emocion || 'Calma',
+        clasificacion: 'Otro',
+        contactoId,
+        contactoNombre,
+        model: MODEL_VOICE
+      });
+    }
+
+    // Gesto: solo tareas futuras; si no es tarea, devolver no_es_tarea
+    const extracted = await extractGesto(textoTrim, nombresContactos);
+    if (!extracted) {
+      await incrementAIUsage(usuario, true, undefined);
+      return res.json({
+        texto: textoTrim,
+        tipo: 'no_es_tarea',
+        message: 'No se detectó una tarea futura. ¿Quieres guardarlo como Momento (algo que ya pasó)?',
+        vinculo: 'Sin asignar',
+        tarea: '',
+        descripcion: textoTrim,
+        fecha: new Date().toISOString().slice(0, 10),
+        hora: '09:00',
+        clasificacion: 'Otro',
+        contactoId: null,
+        contactoNombre: 'Sin asignar',
+        model: MODEL_VOICE
+      });
+    }
+
     const vinculoNorm = (extracted.vinculo || '').toLowerCase().trim();
     const contactoMatch = contactos.find(c => (c.nombre || '').toLowerCase().trim() === vinculoNorm);
     const contactoId = contactoMatch ? contactoMatch._id.toString() : null;
     const contactoNombre = contactoMatch ? (contactoMatch.nombre || extracted.vinculo) : (extracted.vinculo || 'Sin asignar');
-
     const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
     await incrementAIUsage(usuario, true, costUsd);
 
-    // Transcripción completa: la IA solo clasifica (tipo, contacto, fecha, etc.). No se resume ni modifica el texto.
-    const descripcionFinal = textoTrim;
-    const tareaFinal = extracted.tipo === 'tarea' ? textoTrim : '';
-
     res.json({
       texto: textoTrim,
-      tipo: extracted.tipo,
+      tipo: 'tarea',
       vinculo: extracted.vinculo,
-      tarea: tareaFinal,
-      descripcion: descripcionFinal,
-      fecha: extracted.fecha,
+      tarea: textoTrim,
+      descripcion: textoTrim,
+      fecha: extracted.fecha || new Date().toISOString().slice(0, 10),
       hora: extracted.hora || '09:00',
       clasificacion: extracted.clasificacion || 'Otro',
       contactoId,
@@ -865,14 +905,50 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
 // MI REFUGIO - Desahogos (privados, solo usuario)
 // ============================================
 
-// POST - Guardar nota temporal como desahogo (transcribir + IA emoción + guardar)
+// POST - Guardar desahogo: desde voz (tempId) o desde texto (texto)
 app.post('/api/refugio/desahogo', authenticateToken, async (req, res, next) => {
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
     return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
   }
   const tempId = req.body && req.body.tempId;
+  const textoEscrito = req.body && (typeof req.body.texto === 'string' ? req.body.texto.trim() : '');
+
+  // Flujo desde texto (lápiz): solo texto, sin audio
+  if (textoEscrito && (!tempId || typeof tempId !== 'string')) {
+    try {
+      const usuario = await Usuario.findById(req.user.id);
+      if (!usuario) return next(createError('Usuario no encontrado', ERROR_CODES.NOT_FOUND, 404));
+      const limitError = await checkAILimitFreeUser(usuario);
+      if (limitError) return next(limitError);
+      const textoTrim = textoEscrito.slice(0, 5000);
+      const extracted = textoTrim.length >= 3 ? await extractDesahogo(textoTrim) : { emotion: 'Calma', usage: null };
+      const costUsd = extracted.usage ? calcCostFromUsage(extracted.usage.prompt_tokens, extracted.usage.completion_tokens) : undefined;
+      if (extracted.usage) await incrementAIUsage(usuario, true, costUsd);
+      const desahogo = await Desahogo.create({
+        usuarioId: req.user.id,
+        transcription: textoTrim,
+        emotion: extracted.emotion || 'Calma',
+        resumenReflexivo: '',
+        audioBase64: '',
+        createdAt: new Date()
+      });
+      return res.status(201).json({
+        desahogo: {
+          _id: desahogo._id,
+          transcription: desahogo.transcription,
+          emotion: desahogo.emotion,
+          resumenReflexivo: desahogo.resumenReflexivo,
+          createdAt: desahogo.createdAt
+        }
+      });
+    } catch (e) {
+      console.error('Error en POST refugio/desahogo (texto):', e?.message);
+      return res.status(503).json({ error: e?.message || 'Error al guardar el desahogo.' });
+    }
+  }
+
   if (!tempId || typeof tempId !== 'string') {
-    return next(createError('Envía JSON con campo "tempId".', ERROR_CODES.VALIDATION_ERROR, 400));
+    return next(createError('Envía JSON con campo "tempId" (voz) o "texto" (escribir).', ERROR_CODES.VALIDATION_ERROR, 400));
   }
   try {
     const usuario = await Usuario.findById(req.user.id);
@@ -1052,10 +1128,16 @@ app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async 
     if (!contacto) {
       return res.status(404).json({ error: 'Contacto no encontrado.' });
     }
-    // Solo descripcion (transcripción en texto). NUNCA usar doc.audioBase64 ni guardar audio.
+    const fechaHora = (req.body.fechaHora && !isNaN(new Date(req.body.fechaHora).getTime()))
+      ? new Date(req.body.fechaHora)
+      : new Date();
+    const emocion = req.body.emocion && ['Calma', 'Estrés', 'Gratitud', 'Tristeza', 'Alegre', 'Depresivo'].includes(req.body.emocion)
+      ? req.body.emocion
+      : '';
     const nuevaInteraccion = {
-      fechaHora: new Date(),
-      descripcion: texto
+      fechaHora,
+      descripcion: texto,
+      ...(emocion && { emocion })
     };
     contacto.interacciones = contacto.interacciones || [];
     contacto.interacciones.push(nuevaInteraccion);
@@ -1065,6 +1147,38 @@ app.post('/api/contacto/:id/interacciones/from-voice', authenticateToken, async 
     res.json(contacto);
   } catch (error) {
     console.error('Error en from-voice interacción:', error?.message);
+    next(error);
+  }
+});
+
+// POST - Añadir interacción desde texto (lápiz; sin tempId)
+app.post('/api/contacto/:id/interacciones/from-text', authenticateToken, async (req, res, next) => {
+  try {
+    const contactoId = req.params.id;
+    const descripcion = req.body && (typeof req.body.descripcion === 'string' ? req.body.descripcion.trim() : '');
+    if (!descripcion) {
+      return next(createError('Envía JSON con campo "descripcion".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const contacto = await Contacto.findOne({ _id: contactoId, usuarioId: req.user.id });
+    if (!contacto) return res.status(404).json({ error: 'Contacto no encontrado.' });
+    const fechaHora = (req.body.fechaHora && !isNaN(new Date(req.body.fechaHora).getTime()))
+      ? new Date(req.body.fechaHora)
+      : new Date();
+    const emocion = req.body.emocion && ['Calma', 'Estrés', 'Gratitud', 'Tristeza', 'Alegre', 'Depresivo'].includes(req.body.emocion)
+      ? req.body.emocion
+      : '';
+    const nuevaInteraccion = {
+      fechaHora,
+      descripcion: descripcion.slice(0, 2000),
+      ...(emocion && { emocion })
+    };
+    contacto.interacciones = contacto.interacciones || [];
+    contacto.interacciones.push(nuevaInteraccion);
+    contacto.markModified('interacciones');
+    await contacto.save();
+    res.json(contacto);
+  } catch (error) {
+    console.error('Error en from-text interacción:', error?.message);
     next(error);
   }
 });
@@ -1107,6 +1221,35 @@ app.post('/api/contacto/:id/tareas/from-voice', authenticateToken, async (req, r
     res.json(contacto);
   } catch (error) {
     console.error('Error en from-voice tarea:', error?.message);
+    next(error);
+  }
+});
+
+// POST - Añadir tarea desde texto (lápiz; sin tempId)
+app.post('/api/contacto/:id/tareas/from-text', authenticateToken, async (req, res, next) => {
+  try {
+    const contactoId = req.params.id;
+    const descripcion = req.body && (typeof req.body.descripcion === 'string' ? req.body.descripcion.trim() : '');
+    if (!descripcion) {
+      return next(createError('Envía JSON con campo "descripcion".', ERROR_CODES.VALIDATION_ERROR, 400));
+    }
+    const contacto = await Contacto.findOne({ _id: contactoId, usuarioId: req.user.id });
+    if (!contacto) return res.status(404).json({ error: 'Contacto no encontrado.' });
+    const fechaEjecucion = req.body.fechaHoraEjecucion ? new Date(req.body.fechaHoraEjecucion) : new Date();
+    const clasificacion = req.body.clasificacion && TIPOS_DE_GESTO_DISPLAY.includes(req.body.clasificacion) ? req.body.clasificacion : 'Otro';
+    contacto.tareas = contacto.tareas || [];
+    contacto.tareas.push({
+      fechaHoraCreacion: new Date(),
+      descripcion: descripcion.slice(0, 2000),
+      fechaHoraEjecucion: isNaN(fechaEjecucion.getTime()) ? new Date() : fechaEjecucion,
+      clasificacion,
+      completada: false
+    });
+    contacto.markModified('tareas');
+    await contacto.save();
+    res.json(contacto);
+  } catch (error) {
+    console.error('Error en from-text tarea:', error?.message);
     next(error);
   }
 });

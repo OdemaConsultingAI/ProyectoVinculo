@@ -14,6 +14,7 @@ import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { COLORES } from '../constants/colores';
 import { API_URL } from '../constants/api';
+import { formatTime12h } from '../utils/dateTime';
 
 const FRECUENCIAS = {
   'Diario': 1,
@@ -456,7 +457,7 @@ export default function NotificacionesScreen({ navigation }) {
             <Text style={styles.notificacionDescripcion}>{item.descripcion}</Text>
             {item.tipo === 'tarea' && item.fechaEjecucion && (
               <Text style={styles.notificacionFecha}>
-                📅 {formatearFecha(item.fechaEjecucion)} {item.fechaEjecucion.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                📅 {formatearFecha(item.fechaEjecucion)} {formatTime12h(item.fechaEjecucion)}
               </Text>
             )}
             {item.tipo === 'riego' && (
