@@ -85,6 +85,10 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
   const [voicePreviewEditedText, setVoicePreviewEditedText] = useState('');
   /** Contacto elegido por el usuario en el preview (cuando la nota no menciona a nadie). */
   const [voicePreviewSelectedContactId, setVoicePreviewSelectedContactId] = useState(null);
+  /** Tipo de atención seleccionado en preview (Atención); si la IA devuelve 'Otro', el usuario puede elegir. */
+  const [voicePreviewClasificacionSeleccionada, setVoicePreviewClasificacionSeleccionada] = useState('Otro');
+  /** Modal para elegir tipo de atención cuando no se reconoce. */
+  const [showTipoAtencionPicker, setShowTipoAtencionPicker] = useState(false);
   /** Modal escribir (lápiz): texto, contacto y fecha/hora (para Gesto/Momento). */
   const [voiceWriteText, setVoiceWriteText] = useState('');
   const [voiceWriteContactoId, setVoiceWriteContactoId] = useState(null);
@@ -169,6 +173,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
         const hoyStr = new Date().toISOString().slice(0, 10);
         const fechaStr = result.fecha || hoyStr;
         const fechaClamped = (result.tipo === 'tarea' && fechaStr < hoyStr) ? hoyStr : fechaStr;
+        const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(result.clasificacion) ? result.clasificacion : 'Otro';
         setVoicePreviewData({
           texto: result.texto || '',
           tipo: result.tipo || 'tarea',
@@ -176,10 +181,11 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
           tarea: result.tarea || '',
           descripcion: result.descripcion || result.tarea || '',
           fecha: fechaClamped,
-          clasificacion: TIPOS_DE_GESTO_DISPLAY.includes(result.clasificacion) ? result.clasificacion : 'Otro',
+          clasificacion,
           contactoId,
           contactoNombre,
         });
+        setVoicePreviewClasificacionSeleccionada(clasificacion);
         const [y, m, d] = fechaClamped.split('-').map(Number);
         const horaStr = (result.hora || '09:00').toString().trim();
         const horaParts = horaStr.match(/^(\d{1,2}):(\d{2})$/);
@@ -320,6 +326,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     setVoicePreviewTempId(null);
     setVoicePreviewTranscription(null);
     setVoicePreviewEditedText('');
+    setVoicePreviewClasificacionSeleccionada('Otro');
+    setShowTipoAtencionPicker(false);
     setVoicePreviewSelectedContactId(null);
     setVoiceTranscribing(false);
     setVoicePreviewContactoFromModal(null);
@@ -595,11 +603,30 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       <Text style={[styles.modalVoicePreviewText, { fontStyle: 'italic' }]}>Cargando contactos...</Text>
                     )}
                   </View>
-                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 4, fontWeight: '700' }]}>Así se verá tu {voiceSelectedTipo === 'gesto' ? 'huella' : 'momento'}</Text>
+                  {voiceSelectedTipo === 'momento' && (
+                    <>
+                      <Text style={[styles.modalVoicePreviewLabel, { marginTop: 4 }]}>Tipo de atención</Text>
+                      <TouchableOpacity
+                        style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 12, borderWidth: 1, borderColor: COLORES.burbujaBorde, backgroundColor: COLORES.fondo }}
+                        onPress={() => setShowTipoAtencionPicker(true)}
+                        activeOpacity={0.7}
+                      >
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <Text style={{ fontSize: 18 }}>{getGestoConfig(voicePreviewClasificacionSeleccionada).emoji}</Text>
+                          <Text style={{ fontSize: 14, color: COLORES.texto }}>{getGestoConfig(voicePreviewClasificacionSeleccionada).actionLabel ?? voicePreviewClasificacionSeleccionada}</Text>
+                        </View>
+                        {voicePreviewClasificacionSeleccionada === 'Otro' && (
+                          <Text style={{ fontSize: 12, color: COLORES.textoSecundario }}>Toca para elegir</Text>
+                        )}
+                        <Ionicons name="chevron-forward" size={20} color={COLORES.textoSecundario} />
+                      </TouchableOpacity>
+                    </>
+                  )}
+                  <Text style={[styles.modalVoicePreviewLabel, { marginTop: 4, fontWeight: '700' }]}>Así se verá tu {voiceSelectedTipo === 'gesto' ? 'huella' : 'atención'}</Text>
                   <View style={styles.previewGestoCard}>
                     <View style={styles.previewGestoHeader}>
                       <Text style={styles.previewGestoTipo} numberOfLines={1}>
-                        {getGestoConfig(voicePreviewData.clasificacion).emoji} {getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}
+                        {getGestoConfig(voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion).emoji} {getGestoConfig(voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion).actionLabel ?? (voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion)}
                       </Text>
                       <Text style={styles.previewGestoContacto} numberOfLines={1}>
                         {getVoicePreviewContactoNombre() || 'Elige un contacto'}
@@ -618,9 +645,9 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                         </Text>
                         <Ionicons name="calendar-outline" size={16} color={COLORES.texto} />
                       </TouchableOpacity>
-                      <View style={[styles.previewGestoAccionButton, { backgroundColor: getGestoConfig(voicePreviewData.clasificacion).color }]}>
-                        <Ionicons name={getGestoConfig(voicePreviewData.clasificacion).icon} size={18} color="white" />
-                        <Text style={styles.previewGestoAccionText}>{getGestoConfig(voicePreviewData.clasificacion).actionLabel ?? voicePreviewData.clasificacion}</Text>
+                      <View style={[styles.previewGestoAccionButton, { backgroundColor: getGestoConfig(voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion).color }]}>
+                        <Ionicons name={getGestoConfig(voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion).icon} size={18} color="white" />
+                        <Text style={styles.previewGestoAccionText}>{getGestoConfig(voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion).actionLabel ?? (voiceSelectedTipo === 'momento' ? voicePreviewClasificacionSeleccionada : voicePreviewData.clasificacion)}</Text>
                       </View>
                     </View>
                   </View>
@@ -665,6 +692,43 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
               )}
               {voiceSelectedTipo === 'gesto' && voicePreviewData && (
                 <TouchableOpacity
+                  style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction, !getVoicePreviewContactoId() && { opacity: 0.6 }]}
+                  disabled={!getVoicePreviewContactoId()}
+                  onPress={async () => {
+                    if (!voicePreviewTempId) {
+                      Alert.alert('Error', 'Error de conexión. No se pudo subir la nota.');
+                      return;
+                    }
+                    const contactoId = getVoicePreviewContactoId();
+                    if (!contactoId) {
+                      Alert.alert('Elige un contacto', 'Selecciona con quién es esta huella en la lista de arriba.');
+                      return;
+                    }
+                    const textoTranscripcion = (voicePreviewEditedText || voicePreviewTranscription || '').trim();
+                    if (!textoTranscripcion) {
+                      Alert.alert('Aviso', 'No hay texto para guardar.');
+                      return;
+                    }
+                    try {
+                      const { contacto } = await saveInteractionFromVoice(contactoId, voicePreviewTempId, textoTranscripcion);
+                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
+                      closeVoicePreview();
+                      navigationRef?.current?.navigate('Huellas');
+                      Alert.alert('Huella guardada', 'Tu huella se guardó. Aparecerá en Huellas.', [
+                        { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
+                        { text: 'Cerrar', style: 'cancel' },
+                      ]);
+                    } catch (e) {
+                      Alert.alert('Error', e.message || 'No se pudo guardar.');
+                    }
+                  }}
+                >
+                  <Ionicons name="footsteps-outline" size={22} color="white" />
+                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como huella</Text>
+                </TouchableOpacity>
+              )}
+              {voiceSelectedTipo === 'momento' && voicePreviewData && (
+                <TouchableOpacity
                   style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonTask, !getVoicePreviewContactoId() && { opacity: 0.6 }]}
                   disabled={!getVoicePreviewContactoId()}
                   onPress={async () => {
@@ -683,7 +747,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       return;
                     }
                     try {
-                      const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewData?.clasificacion) ? voicePreviewData.clasificacion : 'Otro';
+                      const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(voicePreviewClasificacionSeleccionada) ? voicePreviewClasificacionSeleccionada : 'Otro';
                       let fechaEjecucion = voicePreviewFechaEjecucion && !isNaN(voicePreviewFechaEjecucion.getTime()) ? voicePreviewFechaEjecucion : new Date();
                       if (fechaEjecucion.getTime() < Date.now()) fechaEjecucion = new Date();
                       await saveTaskFromVoice(contactoId, voicePreviewTempId, fechaEjecucion, clasificacion, textoTranscripcion);
@@ -699,45 +763,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     }
                   }}
                 >
-                  <Ionicons name="footsteps-outline" size={22} color="white" />
-                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como huella</Text>
-                </TouchableOpacity>
-              )}
-              {voiceSelectedTipo === 'momento' && voicePreviewData && (
-                <TouchableOpacity
-                  style={[styles.modalVoicePreviewButton, styles.modalVoicePreviewButtonInteraction, !getVoicePreviewContactoId() && { opacity: 0.6 }]}
-                  disabled={!getVoicePreviewContactoId()}
-                  onPress={async () => {
-                    if (!voicePreviewTempId) {
-                      Alert.alert('Error', 'Error de conexión. No se pudo subir la nota.');
-                      return;
-                    }
-                    const contactoId = getVoicePreviewContactoId();
-                    if (!contactoId) {
-                      Alert.alert('Elige un contacto', 'Selecciona con quién es esta huella (momento) en la lista de arriba.');
-                      return;
-                    }
-                    const textoTranscripcion = (voicePreviewEditedText || voicePreviewTranscription || '').trim();
-                    if (!textoTranscripcion) {
-                      Alert.alert('Aviso', 'No hay texto para guardar.');
-                      return;
-                    }
-                    try {
-                      const { contacto } = await saveInteractionFromVoice(contactoId, voicePreviewTempId, textoTranscripcion);
-                      if (voicePreviewTempId) await deleteVoiceTemp(voicePreviewTempId);
-                      closeVoicePreview();
-                      Alert.alert('Momento guardado', 'Tu momento se guardó. Aparecerá en Huellas.', [
-                        { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
-                        { text: 'Ver en Vínculos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: contactoId, openContact: contacto }) },
-                        { text: 'Cerrar', style: 'cancel' },
-                      ]);
-                    } catch (e) {
-                      Alert.alert('Error', e.message || 'No se pudo guardar.');
-                    }
-                  }}
-                >
                   <Ionicons name="sparkles" size={22} color="white" />
-                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como momento</Text>
+                  <Text style={styles.modalVoicePreviewButtonText}>Guardar como atención</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity style={styles.modalVoicePreviewCancel} onPress={closeVoicePreview}>
@@ -746,6 +773,50 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
             </View>
           </View>
         </View>
+      </Modal>
+
+      {/* Modal elegir tipo de atención (cuando no se reconoce o para cambiar) */}
+      <Modal
+        visible={showTipoAtencionPicker}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowTipoAtencionPicker(false)}
+      >
+        <Pressable style={[styles.modalOverlay, { paddingBottom: modalBottomPadding, justifyContent: 'center', paddingHorizontal: 24 }]} onPress={() => setShowTipoAtencionPicker(false)}>
+          <View style={{ backgroundColor: COLORES.fondo, borderRadius: 16, paddingVertical: 16, paddingHorizontal: 8, maxHeight: '80%' }} onStartShouldSetResponder={() => true}>
+            <Text style={[styles.modalVoicePreviewTitle, { marginBottom: 12, paddingHorizontal: 12 }]}>Tipo de atención</Text>
+            <ScrollView style={{ maxHeight: 360 }} showsVerticalScrollIndicator={false}>
+              {TIPOS_DE_GESTO_DISPLAY.map((tipo) => (
+                <TouchableOpacity
+                  key={tipo}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    paddingVertical: 14,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
+                    backgroundColor: voicePreviewClasificacionSeleccionada === tipo ? COLORES.aguaClaro : 'transparent',
+                    borderWidth: voicePreviewClasificacionSeleccionada === tipo ? 2 : 0,
+                    borderColor: COLORES.agua,
+                  }}
+                  onPress={() => {
+                    setVoicePreviewClasificacionSeleccionada(tipo);
+                    setShowTipoAtencionPicker(false);
+                  }}
+                  activeOpacity={0.7}
+                >
+                  <Text style={{ fontSize: 24, marginRight: 12 }}>{getGestoConfig(tipo).emoji}</Text>
+                  <Text style={{ fontSize: 16, color: COLORES.texto, fontWeight: voicePreviewClasificacionSeleccionada === tipo ? '600' : '400' }}>
+                    {getGestoConfig(tipo).actionLabel ?? tipo}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+            <TouchableOpacity style={[styles.modalVoicePreviewCancel, { marginTop: 8 }]} onPress={() => setShowTipoAtencionPicker(false)}>
+              <Text style={styles.modalVoicePreviewCancelText}>Cerrar</Text>
+            </TouchableOpacity>
+          </View>
+        </Pressable>
       </Modal>
 
       {/* Modal escribir (lápiz): Gesto, Momento o Desahogo desde texto */}
@@ -792,8 +863,8 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                     voiceSelectedTipo === 'desahogo'
                       ? 'Escribe tu desahogo...'
                       : voiceSelectedTipo === 'gesto'
-                        ? 'Qué quieres hacer (ej.: Llamar a María mañana)'
-                        : 'Qué pasó (ej.: Almorzamos con Juan ayer)'
+                        ? 'Qué pasó (ej.: Almorzamos con Juan ayer)'
+                        : 'Qué quieres hacer (ej.: Llamar a María mañana)'
                   }
                   multiline
                   numberOfLines={4}
@@ -839,7 +910,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       <DateTimePicker
                         value={voiceWriteFecha}
                         mode={datePickerModeWrite}
-                        minimumDate={voiceSelectedTipo === 'gesto' ? new Date() : undefined}
+                        minimumDate={voiceSelectedTipo === 'momento' ? new Date() : undefined}
                         is24Hour={false}
                         display={Platform.OS === 'ios' ? 'spinner' : 'default'}
                         onChange={(e, d) => {
@@ -879,7 +950,7 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                   const texto = voiceWriteText.trim();
                   if (!texto) return;
                   if ((voiceSelectedTipo === 'gesto' || voiceSelectedTipo === 'momento') && !voiceWriteContactoId) {
-                    Alert.alert('Elige un contacto', 'Selecciona con quién es esta huella o momento.');
+                    Alert.alert('Elige un contacto', voiceSelectedTipo === 'gesto' ? 'Selecciona con quién es esta huella.' : 'Selecciona con quién es esta atención.');
                     return;
                   }
                   setVoiceWriteSaving(true);
@@ -896,6 +967,18 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                         { text: 'Cerrar', style: 'cancel' },
                       ]);
                     } else if (voiceSelectedTipo === 'gesto') {
+                      await saveInteractionFromText(voiceWriteContactoId, texto, voiceWriteFecha);
+                      setVoiceWriteModalVisible(false);
+                      setVoiceSelectedTipo(null);
+                      setVoiceWriteText('');
+                      setVoiceWriteContactoId(null);
+                      setVoiceWriteFecha(new Date());
+                      navigationRef?.current?.navigate('Huellas');
+                      Alert.alert('Huella guardada', 'Tu huella se guardó. Aparecerá en Huellas.', [
+                        { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
+                        { text: 'Cerrar', style: 'cancel' },
+                      ]);
+                    } else if (voiceSelectedTipo === 'momento') {
                       await saveTaskFromText(voiceWriteContactoId, texto, voiceWriteFecha, 'Otro');
                       setVoiceWriteModalVisible(false);
                       setVoiceSelectedTipo(null);
@@ -905,18 +988,6 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
                       navigationRef?.current?.navigate('Atenciones', { refreshGestos: true });
                       Alert.alert('Atención guardada', 'Tu atención se guardó correctamente. Aparecerá en Atenciones.', [
                         { text: 'Ver Atenciones', onPress: () => navigationRef?.current?.navigate('Atenciones', { refreshGestos: true }) },
-                        { text: 'Cerrar', style: 'cancel' },
-                      ]);
-                    } else if (voiceSelectedTipo === 'momento') {
-                      await saveInteractionFromText(voiceWriteContactoId, texto, voiceWriteFecha);
-                      setVoiceWriteModalVisible(false);
-                      setVoiceSelectedTipo(null);
-                      setVoiceWriteText('');
-                      setVoiceWriteContactoId(null);
-                      setVoiceWriteFecha(new Date());
-                      Alert.alert('Momento guardado', 'Tu momento se guardó. Aparecerá en Huellas.', [
-                        { text: 'Ver Huellas', onPress: () => navigationRef?.current?.navigate('Huellas') },
-                        { text: 'Ver en Vínculos', onPress: () => navigationRef?.current?.navigate('Vínculos', { openContactId: voiceWriteContactoId }) },
                         { text: 'Cerrar', style: 'cancel' },
                       ]);
                     }

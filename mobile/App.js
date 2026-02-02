@@ -145,17 +145,17 @@ export default function App() {
                     }} 
                   />
                   <Tab.Screen 
-                    name="Atenciones" 
-                    component={GestosScreen} 
-                    options={{ 
-                      tabBarIcon: ({color}) => <Ionicons name="sparkles" size={24} color={color} /> 
-                    }} 
-                  />
-                  <Tab.Screen 
                     name="Huellas" 
                     component={HuellasScreen} 
                     options={{ 
                       tabBarIcon: ({color}) => <Ionicons name="footsteps-outline" size={24} color={color} /> 
+                    }} 
+                  />
+                  <Tab.Screen 
+                    name="Atenciones" 
+                    component={GestosScreen} 
+                    options={{ 
+                      tabBarIcon: ({color}) => <Ionicons name="sparkles" size={24} color={color} /> 
                     }} 
                   />
                   <Tab.Screen 

@@ -26,7 +26,7 @@ import VoiceFABOnly from './VoiceFABOnly';
 import { updateContactInteracciones, saveInteractionFromText } from '../services/syncService';
 import { formatTime12h } from '../utils/dateTime';
 
-const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
+const FILTROS = ['Hoy', 'Esta semana', 'La semana pasada', 'El mes pasado', 'Todas'];
 
 export default function HuellasModalContacto({ visible, onClose, contact, onContactUpdate }) {
   const { setModalWithVoiceOpen } = useVoiceGlobal();
@@ -81,15 +81,32 @@ export default function HuellasModalContacto({ visible, onClose, contact, onCont
       switch (filtroActivo) {
         case 'Hoy':
           return f.getTime() === hoy.getTime();
-        case 'Semana': {
-          const fin = new Date(hoy);
-          fin.setDate(fin.getDate() + 7);
-          return item.fechaHora >= hoy && item.fechaHora < fin;
+        case 'Esta semana': {
+          const dia = hoy.getDay();
+          const inicioSemana = new Date(hoy);
+          inicioSemana.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1));
+          inicioSemana.setHours(0, 0, 0, 0);
+          const finSemana = new Date(inicioSemana);
+          finSemana.setDate(finSemana.getDate() + 6);
+          finSemana.setHours(23, 59, 59, 999);
+          return item.fechaHora >= inicioSemana && item.fechaHora <= finSemana;
         }
-        case 'Mes': {
-          const finMes = new Date(hoy);
-          finMes.setMonth(finMes.getMonth() + 1);
-          return item.fechaHora >= hoy && item.fechaHora < finMes;
+        case 'La semana pasada': {
+          const dia = hoy.getDay();
+          const inicioEstaSemana = new Date(hoy);
+          inicioEstaSemana.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1));
+          inicioEstaSemana.setHours(0, 0, 0, 0);
+          const inicioSemanaPasada = new Date(inicioEstaSemana);
+          inicioSemanaPasada.setDate(inicioSemanaPasada.getDate() - 7);
+          const finSemanaPasada = new Date(inicioSemanaPasada);
+          finSemanaPasada.setDate(finSemanaPasada.getDate() + 6);
+          finSemanaPasada.setHours(23, 59, 59, 999);
+          return item.fechaHora >= inicioSemanaPasada && item.fechaHora <= finSemanaPasada;
+        }
+        case 'El mes pasado': {
+          const inicioMesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+          const finMesPasado = new Date(hoy.getFullYear(), hoy.getMonth(), 0, 23, 59, 59, 999);
+          return item.fechaHora >= inicioMesPasado && item.fechaHora <= finMesPasado;
         }
         default:
           return true;
@@ -239,7 +256,7 @@ export default function HuellasModalContacto({ visible, onClose, contact, onCont
               <View style={styles.emptyState}>
                 <Ionicons name="footsteps-outline" size={48} color={COLORES.textoSecundario} />
                 <Text style={styles.emptyText}>
-                  {filtroActivo === 'Hoy' ? 'No hay huellas para hoy' : filtroActivo === 'Semana' ? 'No hay huellas esta semana' : filtroActivo === 'Mes' ? 'No hay huellas este mes' : 'No hay huellas'}
+                  {filtroActivo === 'Hoy' ? 'No hay huellas para hoy' : filtroActivo === 'Esta semana' ? 'No hay huellas esta semana' : filtroActivo === 'La semana pasada' ? 'No hay huellas la semana pasada' : filtroActivo === 'El mes pasado' ? 'No hay huellas el mes pasado' : 'No hay huellas'}
                 </Text>
               </View>
             }

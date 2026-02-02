@@ -710,6 +710,37 @@ export const getEspejo = async () => {
   }
 };
 
+/** Borrar todas las atenciones (tareas) del usuario. Requiere confirmación en la UI. */
+export const clearAtenciones = async () => {
+  if (!isOnline) throw new Error('Necesitas conexión para borrar.');
+  await fetchWithAuth(`${API_BASE_URL}/api/user/clear-atenciones`, { method: 'POST' });
+  return { success: true };
+};
+
+/** Borrar todas las huellas (interacciones) del usuario. Requiere confirmación en la UI. */
+export const clearHuellas = async () => {
+  if (!isOnline) throw new Error('Necesitas conexión para borrar.');
+  await fetchWithAuth(`${API_BASE_URL}/api/user/clear-huellas`, { method: 'POST' });
+  return { success: true };
+};
+
+/** Borrar todos los desahogos del usuario (Mi Refugio). Requiere confirmación en la UI. */
+export const clearDesahogos = async () => {
+  if (!isOnline) throw new Error('Necesitas conexión para borrar.');
+  await fetchWithAuth(`${REFUGIO_URL}/desahogos`, { method: 'DELETE' });
+  return { success: true };
+};
+
+/** Borrar un desahogo por ID (Mi Refugio). */
+export const deleteDesahogo = async (id) => {
+  if (!isOnline) throw new Error('Necesitas conexión para borrar.');
+  const idStr = id != null ? String(id).trim() : '';
+  if (!idStr) throw new Error('ID de desahogo no válido.');
+  const url = `${REFUGIO_URL}/desahogos/${encodeURIComponent(idStr)}`;
+  await fetchWithAuth(url, { method: 'DELETE' });
+  return { success: true };
+};
+
 /** Guardar tarea desde nota de voz: guarda la transcripción íntegra (sin audio). Requiere conexión. */
 export const saveTaskFromVoice = async (contactoId, tempId, fechaHoraEjecucion, clasificacion = 'Otro', texto = '') => {
   if (!isOnline) {

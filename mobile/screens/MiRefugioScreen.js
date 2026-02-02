@@ -15,7 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import AyudaContext from '../context/AyudaContext';
 const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
-import { loadDesahogos, getDesahogoById, getEspejo } from '../services/syncService';
+import { loadDesahogos, getDesahogoById, getEspejo, deleteDesahogo } from '../services/syncService';
 import { playFromBase64 } from '../services/voiceToTaskService';
 import { formatTime12h } from '../utils/dateTime';
 
@@ -104,9 +104,23 @@ export default function MiRefugioScreen() {
     }
   }, [playingId]);
 
+  const onBorrarDesahogo = async (item) => {
+    const id = item?._id ?? item?.id;
+    if (!id) {
+      Alert.alert('Error', 'No se pudo identificar la entrada.');
+      return;
+    }
+    try {
+      await deleteDesahogo(id);
+      const idStr = String(id);
+      setDesahogos(prev => prev.filter(d => String(d?._id ?? d?.id) !== idStr));
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'No se pudo borrar.');
+    }
+  };
+
   const renderItem = ({ item }) => {
     const colorEmotion = EMOTION_COLORS[item.emotion] || COLORES.textoSecundario;
-    // Transcripción completa; la IA solo clasifica la emoción (Calma, Estrés, Gratitud, Tristeza)
     const texto = (item.transcription || '').trim();
     const isPlaying = playingId === item._id;
     return (
@@ -126,6 +140,23 @@ export default function MiRefugioScreen() {
               ) : (
                 <Ionicons name="play-circle-outline" size={28} color={COLORES.agua} />
               )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              onPress={() => {
+                Alert.alert(
+                  'Borrar desahogo',
+                  '¿Eliminar esta entrada? No se puede deshacer.',
+                  [
+                    { text: 'Cancelar', style: 'cancel' },
+                    { text: 'Borrar', style: 'destructive', onPress: () => onBorrarDesahogo(item) },
+                  ]
+                );
+              }}
+              hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              style={{ padding: 4 }}
+              accessibilityLabel="Borrar este desahogo"
+            >
+              <Ionicons name="trash-outline" size={22} color={COLORES.urgente} />
             </TouchableOpacity>
             <Text style={styles.cardDate}>{formatFecha(item.createdAt)}</Text>
           </View>

@@ -415,8 +415,11 @@ export async function transcribeVoiceTemp(tempId, tipo) {
   log('2/4 Token OK');
   try {
     const body = { tempId: tempId.trim() };
-    if (tipo === 'gesto' || tipo === 'momento') body.tipo = tipo;
-    log('3/4 POST request a:', url, 'body:', JSON.stringify(body));
+    // En la app: "Atención" = tipo 'momento' (tarea futura). "Huella" = tipo 'gesto' (momento pasado).
+    // El backend espera: gesto = tarea futura (extrae clasificacion + fecha), momento = algo que ya pasó.
+    const apiTipo = tipo === 'gesto' ? 'momento' : tipo === 'momento' ? 'gesto' : tipo;
+    if (apiTipo === 'gesto' || apiTipo === 'momento') body.tipo = apiTipo;
+    log('3/4 POST request a:', url, 'body:', JSON.stringify(body), '(app tipo:', tipo, '→ api tipo:', body.tipo, ')');
     const response = await fetch(url, {
       method: 'POST',
       headers: {

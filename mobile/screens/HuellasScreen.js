@@ -26,13 +26,13 @@ import NotificationBell from '../components/NotificationBell';
 import AyudaContext from '../context/AyudaContext';
 const useAyuda = AyudaContext?.useAyuda ?? (() => ({ openAyuda: () => {} }));
 
-const FILTROS = ['Hoy', 'Semana', 'Mes', 'Todas'];
+const FILTROS = ['Hoy', 'Esta semana', 'La semana pasada', 'El mes pasado', 'Todas'];
 
 export default function HuellasScreen() {
   const [contactos, setContactos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filtroActivo, setFiltroActivo] = useState('Hoy');
+  const [filtroActivo, setFiltroActivo] = useState('Todas');
   const [filtroContactoId, setFiltroContactoId] = useState(null);
   const [dropdownTiempoVisible, setDropdownTiempoVisible] = useState(false);
   const [dropdownContactoVisible, setDropdownContactoVisible] = useState(false);
@@ -115,15 +115,32 @@ export default function HuellasScreen() {
         switch (filtroActivo) {
           case 'Hoy':
             return f.getTime() === hoy.getTime();
-          case 'Semana': {
-            const fin = new Date(hoy);
-            fin.setDate(fin.getDate() + 7);
-            return item.fechaHora >= hoy && item.fechaHora < fin;
+          case 'Esta semana': {
+            const dia = hoy.getDay();
+            const inicioSemana = new Date(hoy);
+            inicioSemana.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1));
+            inicioSemana.setHours(0, 0, 0, 0);
+            const finSemana = new Date(inicioSemana);
+            finSemana.setDate(finSemana.getDate() + 6);
+            finSemana.setHours(23, 59, 59, 999);
+            return item.fechaHora >= inicioSemana && item.fechaHora <= finSemana;
           }
-          case 'Mes': {
-            const finMes = new Date(hoy);
-            finMes.setMonth(finMes.getMonth() + 1);
-            return item.fechaHora >= hoy && item.fechaHora < finMes;
+          case 'La semana pasada': {
+            const dia = hoy.getDay();
+            const inicioEstaSemana = new Date(hoy);
+            inicioEstaSemana.setDate(hoy.getDate() - (dia === 0 ? 6 : dia - 1));
+            inicioEstaSemana.setHours(0, 0, 0, 0);
+            const inicioSemanaPasada = new Date(inicioEstaSemana);
+            inicioSemanaPasada.setDate(inicioSemanaPasada.getDate() - 7);
+            const finSemanaPasada = new Date(inicioSemanaPasada);
+            finSemanaPasada.setDate(finSemanaPasada.getDate() + 6);
+            finSemanaPasada.setHours(23, 59, 59, 999);
+            return item.fechaHora >= inicioSemanaPasada && item.fechaHora <= finSemanaPasada;
+          }
+          case 'El mes pasado': {
+            const inicioMesPasado = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+            const finMesPasado = new Date(hoy.getFullYear(), hoy.getMonth(), 0, 23, 59, 59, 999);
+            return item.fechaHora >= inicioMesPasado && item.fechaHora <= finMesPasado;
           }
           default:
             return true;
@@ -220,14 +237,29 @@ export default function HuellasScreen() {
     }
   };
 
+  const borrarHuella = async (item) => {
+    const contacto = contactos.find(c => c._id === item.contactoId);
+    if (!contacto) return;
+    const idx = item.interaccionIndex;
+    const interaccionesActualizadas = (contacto.interacciones || []).filter((_, i) => i !== idx);
+    try {
+      const result = await updateContactInteracciones(item.contactoId, interaccionesActualizadas);
+      if (result.success) {
+        setContactos(prev => prev.map(c => c._id === item.contactoId ? result.contacto : c));
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'No se pudo borrar la huella.');
+    }
+  };
+
   const renderHuella = ({ item }) => {
     return (
-      <TouchableOpacity
-        style={styles.huellaItem}
-        onPress={() => abrirEditar(item)}
-        activeOpacity={0.8}
-      >
-        <View style={styles.huellaLeft}>
+      <View style={[styles.huellaItem, { flexDirection: 'row', alignItems: 'center' }]}>
+        <TouchableOpacity
+          style={[styles.huellaLeft, { flex: 1 }]}
+          onPress={() => abrirEditar(item)}
+          activeOpacity={0.8}
+        >
           {item.contactoFoto ? (
             <Image source={{ uri: item.contactoFoto }} style={styles.contactoAvatar} />
           ) : (
@@ -251,8 +283,25 @@ export default function HuellasScreen() {
             </Text>
           </View>
           <Ionicons name="chevron-forward" size={20} color={COLORES.textoSecundario} />
-        </View>
-      </TouchableOpacity>
+        </TouchableOpacity>
+        <TouchableOpacity
+          onPress={() => {
+            Alert.alert(
+              'Borrar huella',
+              '¿Eliminar este momento? No se puede deshacer.',
+              [
+                { text: 'Cancelar', style: 'cancel' },
+                { text: 'Borrar', style: 'destructive', onPress: () => borrarHuella(item) },
+              ]
+            );
+          }}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          style={{ padding: 8 }}
+          accessibilityLabel="Borrar esta huella"
+        >
+          <Ionicons name="trash-outline" size={20} color={COLORES.urgente} />
+        </TouchableOpacity>
+      </View>
     );
   };
 
@@ -378,10 +427,12 @@ export default function HuellasScreen() {
             <Text style={styles.emptyText}>
               {filtroActivo === 'Hoy'
                 ? 'No hay huellas para hoy'
-                : filtroActivo === 'Semana'
+                : filtroActivo === 'Esta semana'
                 ? 'No hay huellas esta semana'
-                : filtroActivo === 'Mes'
-                ? 'No hay huellas este mes'
+                : filtroActivo === 'La semana pasada'
+                ? 'No hay huellas la semana pasada'
+                : filtroActivo === 'El mes pasado'
+                ? 'No hay huellas el mes pasado'
                 : 'No hay huellas'}
             </Text>
           </View>

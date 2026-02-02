@@ -47,7 +47,7 @@ export default function GestosScreen() {
   const [contactos, setContactos] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [filtroActivo, setFiltroActivo] = useState('Hoy');
+  const [filtroActivo, setFiltroActivo] = useState('Todas');
   const [filtroTipoActivo, setFiltroTipoActivo] = useState('Todas');
   const [filtroContactoId, setFiltroContactoId] = useState(null); // null = Todos
   const [dropdownTiempoVisible, setDropdownTiempoVisible] = useState(false);
@@ -370,6 +370,20 @@ export default function GestosScreen() {
     setModalHistorialVisible(false);
   };
 
+  const borrarTarea = async (contactoId, tareaIndex) => {
+    const contacto = contactos.find(c => c._id === contactoId);
+    if (!contacto) return;
+    const tareasActualizadas = (contacto.tareas || []).filter((_, i) => i !== tareaIndex);
+    try {
+      const result = await updateContactTareas(contactoId, tareasActualizadas);
+      if (result.success) {
+        setContactos(prev => prev.map(c => c._id === contactoId ? result.contacto : c));
+      }
+    } catch (e) {
+      Alert.alert('Error', e?.message || 'No se pudo borrar la atención.');
+    }
+  };
+
   const abrirEditarTarea = (item) => {
     setTareaEditando(item);
     setEditDescripcion(item.descripcion || '');
@@ -596,9 +610,28 @@ export default function GestosScreen() {
                     </View>
                   )}
                 </View>
-                <Text style={styles.tareaContactoDerecha} numberOfLines={1}>
-                  {item.contactoNombre || '—'}
-                </Text>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+                  <Text style={styles.tareaContactoDerecha} numberOfLines={1}>
+                    {item.contactoNombre || '—'}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        'Borrar atención',
+                        '¿Eliminar esta atención? No se puede deshacer.',
+                        [
+                          { text: 'Cancelar', style: 'cancel' },
+                          { text: 'Borrar', style: 'destructive', onPress: () => borrarTarea(item.contactoId, tareaIndex) },
+                        ]
+                      );
+                    }}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    style={{ padding: 4 }}
+                    accessibilityLabel="Borrar esta atención"
+                  >
+                    <Ionicons name="trash-outline" size={20} color={COLORES.urgente} />
+                  </TouchableOpacity>
+                </View>
               </View>
             
               <Text style={styles.tareaDescripcion} numberOfLines={2}>
