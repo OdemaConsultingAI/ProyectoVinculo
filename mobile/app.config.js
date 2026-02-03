@@ -1,29 +1,41 @@
-const path = require('path');
-
+/**
+ * Configuración de Expo/EAS. Exporta explícitamente nombre e icono
+ * para que el APK muestre "Vinculo" y el icono correcto (no "mobile").
+ * Usar rutas relativas para que EAS las resuelva desde la raíz del proyecto (mobile/).
+ */
 const appJson = require('./app.json');
 const { expo } = appJson;
 
-// Forzar nombre e icono para que no se use package.json ni caché
-const config = {
-  ...appJson,
+module.exports = {
   expo: {
-    ...expo,
     name: 'Vinculo',
-    icon: path.resolve(__dirname, 'assets/icon.png'),
+    slug: expo.slug || 'vinculos-app',
+    version: expo.version || '1.0.0',
+    orientation: expo.orientation || 'portrait',
+    icon: './assets/icon.png',
+    userInterfaceStyle: expo.userInterfaceStyle || 'light',
+    newArchEnabled: expo.newArchEnabled !== false,
+    splash: {
+      image: './assets/splash-icon.png',
+      resizeMode: expo.splash?.resizeMode || 'contain',
+      backgroundColor: expo.splash?.backgroundColor || '#ffffff',
+    },
+    ios: expo.ios || { supportsTablet: true },
     android: {
       ...expo.android,
+      package: expo.android?.package || 'com.vinculos.app',
       label: 'Vinculo',
-      icon: path.resolve(__dirname, 'assets/icon.png'),
+      icon: './assets/icon.png',
       adaptiveIcon: {
-        ...expo.android?.adaptiveIcon,
-        foregroundImage: path.resolve(__dirname, 'assets/adaptive-icon.png'),
+        foregroundImage: './assets/adaptive-icon.png',
+        backgroundColor: expo.android?.adaptiveIcon?.backgroundColor || '#ffffff',
       },
+      edgeToEdgeEnabled: expo.android?.edgeToEdgeEnabled !== false,
+      usesCleartextTraffic: expo.android?.usesCleartextTraffic !== false,
+      networkSecurityConfig: expo.android?.networkSecurityConfig,
     },
-    splash: {
-      ...expo.splash,
-      image: path.resolve(__dirname, 'assets/splash-icon.png'),
-    },
+    web: expo.web || { favicon: './assets/favicon.png' },
+    plugins: expo.plugins || [],
+    extra: expo.extra || {},
   },
 };
-
-module.exports = config;
