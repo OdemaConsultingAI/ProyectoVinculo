@@ -14,6 +14,7 @@ import { useFocusEffect, useRoute, useNavigation } from '@react-navigation/nativ
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import AyudaContext from '../context/AyudaContext';
+import NotificationBell from '../components/NotificationBell';
 const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
 import { loadDesahogos, getDesahogoById, getEspejo, deleteDesahogo } from '../services/syncService';
 import { playFromBase64 } from '../services/voiceToTaskService';
@@ -178,8 +179,9 @@ export default function MiRefugioScreen() {
       ) : (
         <>
           <Ionicons name="mic-outline" size={48} color={COLORES.textoSuave} />
+          <Text style={styles.placeholderTitle}>Tu refugio está vacío</Text>
           <Text style={styles.placeholderText}>
-            Usa el micrófono y elige "Guardar como Desahogo" para añadir una entrada aquí.
+            Este es tu espacio para desahogarte en voz. Lo que guardes aquí es solo para ti. Usa el micrófono flotante y elige "Guardar como Desahogo" para añadir tu primera entrada.
           </Text>
         </>
       )}
@@ -230,19 +232,19 @@ export default function MiRefugioScreen() {
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
-        <View style={styles.headerTopRow}>
-          <View style={{ width: 42 }} />
-          <TouchableOpacity onPress={openAyuda} style={styles.helpButton} accessibilityLabel="Ayuda">
-            <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
-          </TouchableOpacity>
+        <View style={styles.headerRow}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, flex: 1 }}>
+            <Ionicons name="archive" size={24} color={COLORES.agua} />
+            <Text style={styles.headerTitle}>Mi Refugio</Text>
+          </View>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+              <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSecundario} />
+            </TouchableOpacity>
+            <NotificationBell />
+          </View>
         </View>
-        <View style={styles.iconWrap}>
-          <Ionicons name="archive" size={40} color={COLORES.agua} />
-        </View>
-        <Text style={styles.title}>Mi Refugio</Text>
-        <Text style={styles.subtitle}>
-          El lugar más seguro para lo que más importa: tú.
-        </Text>
+        <Text style={styles.headerSubtitle}>El lugar más seguro para lo que más importa: tú.</Text>
       </View>
       <View style={styles.content}>
         <FlatList
@@ -268,39 +270,25 @@ const styles = StyleSheet.create({
     backgroundColor: COLORES.fondo,
   },
   header: {
-    paddingHorizontal: 24,
-    paddingTop: 16,
+    paddingTop: 20,
+    paddingHorizontal: 20,
     paddingBottom: 16,
-    alignItems: 'center',
+    backgroundColor: COLORES.fondo,
   },
-  headerTopRow: {
+  headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    alignSelf: 'stretch',
-    marginBottom: 8,
   },
-  headerSpacer: { flex: 1 },
-  helpButton: { padding: 8 },
-  iconWrap: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: COLORES.aguaClaro,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 12,
-  },
-  title: {
-    fontSize: 26,
-    fontWeight: '700',
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
     color: COLORES.texto,
-    marginBottom: 6,
   },
-  subtitle: {
+  headerSubtitle: {
     fontSize: 15,
     color: COLORES.textoSecundario,
-    textAlign: 'center',
+    marginTop: 6,
   },
   content: {
     flex: 1,
@@ -419,13 +407,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingVertical: 32,
+    paddingHorizontal: 28,
     minHeight: 200,
   },
+  placeholderTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORES.texto,
+    marginTop: 16,
+    textAlign: 'center',
+  },
   placeholderText: {
-    fontSize: 14,
-    color: COLORES.textoSuave,
+    fontSize: 15,
+    color: COLORES.textoSecundario,
     textAlign: 'center',
     marginTop: 12,
-    paddingHorizontal: 24,
+    lineHeight: 22,
+    paddingHorizontal: 8,
   },
 });

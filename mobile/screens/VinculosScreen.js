@@ -1926,7 +1926,7 @@ export default function VinculosScreen() {
                 <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
               </View>
               <Text style={styles.emptyText}>No hay vínculos aún</Text>
-              <Text style={styles.emptySubtext}>Toca el botón de abajo para descubrir contactos y cultivar tus relaciones.</Text>
+              <Text style={styles.emptySubtext}>Aquí aparecen las personas que eliges cultivar. Descubre contactos desde tu agenda con el botón de abajo. Usa el micrófono flotante para registrar momentos y atenciones.</Text>
             </View>
           </View>
           {/* Botón flotante para modo swipe */}
@@ -2687,7 +2687,7 @@ export default function VinculosScreen() {
                 <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
               </View>
               <Text style={styles.emptyText}>No hay vínculos aún</Text>
-              <Text style={styles.emptySubtext}>Toca el botón para descubrir contactos</Text>
+              <Text style={styles.emptySubtext}>Aquí aparecen las personas que eliges cultivar. Descubre contactos desde tu agenda. Usa el micrófono flotante para añadir momentos y atenciones.</Text>
             </View>
           }
         />

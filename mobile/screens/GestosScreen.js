@@ -869,7 +869,7 @@ export default function GestosScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <Ionicons name="footsteps-outline" size={64} color={COLORES.textoSuave} />
+            <Ionicons name="sparkles-outline" size={64} color={COLORES.textoSuave} />
             <Text style={styles.emptyText}>
               {filtroActivo === 'Hoy' 
                 ? 'No hay atenciones para hoy' 
@@ -878,6 +878,9 @@ export default function GestosScreen() {
                 : filtroActivo === 'Mes'
                 ? 'No hay atenciones este mes'
                 : 'No hay atenciones'}
+            </Text>
+            <Text style={styles.emptySubtext}>
+              Las atenciones son acciones que quieres tener con quienes te importan (llamar, escribir, visitar, felicitar…). Añade una con el micrófono flotante.
             </Text>
           </View>
         }
@@ -2439,11 +2442,20 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingVertical: 80,
+    paddingHorizontal: 32,
   },
   emptyText: {
-    fontSize: 16,
-    color: COLORES.textoSecundario,
+    fontSize: 18,
+    fontWeight: '600',
+    color: COLORES.texto,
     marginTop: 16,
     textAlign: 'center',
+  },
+  emptySubtext: {
+    fontSize: 15,
+    color: COLORES.textoSecundario,
+    marginTop: 12,
+    textAlign: 'center',
+    lineHeight: 22,
   },
 });

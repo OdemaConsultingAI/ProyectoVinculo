@@ -435,6 +435,9 @@ export default function HuellasScreen() {
                 ? 'No hay huellas el mes pasado'
                 : 'No hay huellas'}
             </Text>
+            <Text style={styles.emptySubtext}>
+              Las huellas son los momentos que compartes con cada contacto (almorzar, llamar, quedar…). Añade una con el micrófono flotante.
+            </Text>
           </View>
         }
         refreshControl={
@@ -692,8 +695,9 @@ const styles = StyleSheet.create({
   huellaContacto: { fontSize: 16, fontWeight: '600', color: COLORES.texto, flex: 1, marginRight: 8 },
   huellaFecha: { fontSize: 12, color: COLORES.textoSecundario },
   huellaDescripcion: { fontSize: 14, color: COLORES.textoSecundario, lineHeight: 20 },
-  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 80 },
-  emptyText: { fontSize: 16, color: COLORES.textoSecundario, marginTop: 16, textAlign: 'center' },
+  emptyState: { flex: 1, justifyContent: 'center', alignItems: 'center', paddingVertical: 80, paddingHorizontal: 32 },
+  emptyText: { fontSize: 18, fontWeight: '600', color: COLORES.texto, marginTop: 16, textAlign: 'center' },
+  emptySubtext: { fontSize: 15, color: COLORES.textoSecundario, marginTop: 12, textAlign: 'center', lineHeight: 22 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
   modalContent: { backgroundColor: COLORES.fondo, borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: '90%' },
   modalHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: COLORES.fondoSecundario },
