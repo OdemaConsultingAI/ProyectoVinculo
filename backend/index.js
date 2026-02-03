@@ -906,6 +906,17 @@ app.post('/api/ai/voice-temp/transcribe', authenticateToken, async (req, res, ne
 // ============================================
 
 // POST - Guardar desahogo: desde voz (tempId) o desde texto (texto)
+// Log de todas las peticiones a refugio (para depurar 404)
+app.use('/api/refugio', (req, res, next) => {
+  console.log('📥 [refugio]', req.method, req.originalUrl);
+  next();
+});
+
+// Ruta de prueba sin auth: GET /api/refugio/ping → si responde 200, el servidor recibe peticiones a refugio
+app.get('/api/refugio/ping', (req, res) => {
+  res.json({ ok: true, message: 'refugio routes OK', ts: new Date().toISOString() });
+});
+
 app.post('/api/refugio/desahogo', authenticateToken, async (req, res, next) => {
   if (!process.env.OPENAI_API_KEY || !process.env.OPENAI_API_KEY.trim()) {
     return next(createError('Servicio de IA no configurado', ERROR_CODES.SERVER_ERROR, 503));
@@ -1072,6 +1083,87 @@ app.get('/api/refugio/espejo', authenticateToken, async (req, res, next) => {
   } catch (error) {
     console.error('Error en GET refugio/espejo:', error);
     res.json({ text: 'No se pudo generar el resumen esta semana.' });
+  }
+});
+
+// Helper: borrar un desahogo por ID (solo del usuario)
+async function borrarUnDesahogo(req, res, next) {
+  console.log('🗑️ [refugio] Borrar desahogo recibido – id:', req.params.id, 'method:', req.method);
+  try {
+    const idParam = (req.params.id || '').trim();
+    if (!idParam) {
+      return res.status(400).json({ message: 'Falta el ID del desahogo.' });
+    }
+    let objectId;
+    try {
+      objectId = new mongoose.Types.ObjectId(idParam);
+    } catch (e) {
+      return res.status(400).json({ message: 'ID de desahogo inválido.' });
+    }
+    const userId = req.user.id;
+    const doc = await Desahogo.findOneAndDelete({ _id: objectId, usuarioId: userId });
+    if (!doc) {
+      return res.status(404).json({ message: 'Desahogo no encontrado.' });
+    }
+    res.json({ message: 'Desahogo eliminado' });
+  } catch (error) {
+    console.error('Error borrando desahogo:', error);
+    next(error);
+  }
+}
+
+// DELETE - Borrar un desahogo por ID (puede dar 404 en algunos hosts que bloquean DELETE)
+app.delete('/api/refugio/desahogos/:id', authenticateToken, borrarUnDesahogo);
+
+// POST - Borrar un desahogo por ID (alternativa para Render/proxies que no manejan bien DELETE)
+app.post('/api/refugio/desahogos/:id/delete', authenticateToken, borrarUnDesahogo);
+
+// DELETE - Borrar todos los desahogos del usuario (Mi Refugio)
+app.delete('/api/refugio/desahogos', authenticateToken, async (req, res, next) => {
+  try {
+    const result = await Desahogo.deleteMany({ usuarioId: req.user.id });
+    res.json({ message: 'Desahogos eliminados', deletedCount: result.deletedCount });
+  } catch (error) {
+    console.error('Error en DELETE refugio/desahogos:', error);
+    next(error);
+  }
+});
+
+// POST - Borrar todas las atenciones (tareas) del usuario
+app.post('/api/user/clear-atenciones', authenticateToken, async (req, res, next) => {
+  try {
+    const contactos = await Contacto.find({ usuarioId: req.user.id });
+    for (const c of contactos) {
+      if ((c.tareas || []).length > 0) {
+        c.tareas = [];
+        c.proximaTarea = '';
+        c.fechaRecordatorio = null;
+        c.markModified('tareas');
+        await c.save();
+      }
+    }
+    res.json({ message: 'Atenciones eliminadas', contactosActualizados: contactos.length });
+  } catch (error) {
+    console.error('Error en POST user/clear-atenciones:', error);
+    next(error);
+  }
+});
+
+// POST - Borrar todas las huellas (interacciones) del usuario
+app.post('/api/user/clear-huellas', authenticateToken, async (req, res, next) => {
+  try {
+    const contactos = await Contacto.find({ usuarioId: req.user.id });
+    for (const c of contactos) {
+      if ((c.interacciones || []).length > 0) {
+        c.interacciones = [];
+        c.markModified('interacciones');
+        await c.save();
+      }
+    }
+    res.json({ message: 'Huellas eliminadas', contactosActualizados: contactos.length });
+  } catch (error) {
+    console.error('Error en POST user/clear-huellas:', error);
+    next(error);
   }
 });
 

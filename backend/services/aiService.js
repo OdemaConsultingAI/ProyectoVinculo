@@ -23,7 +23,22 @@ function getCurrentWeekdaySpanish() {
 }
 
 /**
- * Lee un prompt desde backend/prompts/ y reemplaza {{CURRENT_DATE}} y {{CURRENT_WEEKDAY}}.
+ * Fecha (YYYY-MM-DD) del próximo día de la semana indicado.
+ * @param {number} weekday - 0=domingo, 1=lunes, ..., 6=sábado (mismo que Date.getDay())
+ * @returns {string} YYYY-MM-DD del próximo ocurrencia de ese día (si hoy es ese día, devuelve el de la semana siguiente)
+ */
+function getNextWeekdayDateISO(weekday) {
+  const hoy = new Date();
+  const hoyDay = hoy.getDay();
+  let diasSumar = (weekday - hoyDay + 7) % 7;
+  if (diasSumar === 0) diasSumar = 7; // si es hoy, el "próximo" es la semana siguiente
+  const d = new Date(hoy);
+  d.setDate(d.getDate() + diasSumar);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Lee un prompt desde backend/prompts/ y reemplaza {{CURRENT_DATE}}, {{CURRENT_WEEKDAY}} y fechas de próximos días.
  * @param {string} filename - ej. 'gestos.txt', 'momentos.txt'
  * @returns {string}
  */
@@ -34,6 +49,20 @@ function readPrompt(filename) {
       let content = fs.readFileSync(filePath, 'utf8').trim();
       content = content.replace(/\{\{CURRENT_DATE\}\}/g, getCurrentDateISO());
       content = content.replace(/\{\{CURRENT_WEEKDAY\}\}/g, getCurrentWeekdaySpanish());
+      // Fechas ya calculadas para "próximo lunes", "próximo viernes", etc. (0=domingo, 1=lunes, ..., 6=sábado)
+      content = content.replace(/\{\{PROXIMO_DOMINGO\}\}/g, getNextWeekdayDateISO(0));
+      content = content.replace(/\{\{PROXIMO_LUNES\}\}/g, getNextWeekdayDateISO(1));
+      content = content.replace(/\{\{PROXIMO_MARTES\}\}/g, getNextWeekdayDateISO(2));
+      content = content.replace(/\{\{PROXIMO_MIERCOLES\}\}/g, getNextWeekdayDateISO(3));
+      content = content.replace(/\{\{PROXIMO_JUEVES\}\}/g, getNextWeekdayDateISO(4));
+      content = content.replace(/\{\{PROXIMO_VIERNES\}\}/g, getNextWeekdayDateISO(5));
+      content = content.replace(/\{\{PROXIMO_SABADO\}\}/g, getNextWeekdayDateISO(6));
+      // Mañana y pasado mañana
+      const hoy = new Date();
+      const manana = new Date(hoy); manana.setDate(manana.getDate() + 1);
+      const pasadoManana = new Date(hoy); pasadoManana.setDate(pasadoManana.getDate() + 2);
+      content = content.replace(/\{\{MANANA\}\}/g, manana.toISOString().slice(0, 10));
+      content = content.replace(/\{\{PASADO_MANANA\}\}/g, pasadoManana.toISOString().slice(0, 10));
       return content;
     }
   } catch (e) {
@@ -214,8 +243,46 @@ function getDisplayPart(full) {
 const TIPOS_DE_GESTO_DISPLAY = TIPOS_DE_GESTO_FULL.map(getDisplayPart);
 
 /**
+ * Construye el bloque de contexto (fechas y clasificación) para el mensaje de usuario en extractGesto.
+ * Así el modelo recibe las fechas ya calculadas y las reglas junto al texto a analizar.
+ */
+function buildGestoUserContext(nombresContactos) {
+  const hoy = getCurrentDateISO();
+  const manana = (() => { const d = new Date(); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10); })();
+  const pasadoManana = (() => { const d = new Date(); d.setDate(d.getDate() + 2); return d.toISOString().slice(0, 10); })();
+  const proximoLunes = getNextWeekdayDateISO(1);
+  const proximoViernes = getNextWeekdayDateISO(5);
+  const proximoSabado = getNextWeekdayDateISO(6);
+  const listaContactos = nombresContactos.length ? `Contactos: ${nombresContactos.join(', ')}.\n` : '';
+  return `${listaContactos}FECHAS (copia EXACTAMENTE en "fecha" según lo que diga el usuario):
+- "hoy" → ${hoy}
+- "mañana" → ${manana}
+- "pasado mañana" → ${pasadoManana}
+- "próximo lunes" / "este lunes" → ${proximoLunes}
+- "próximo martes" / "este martes" → ${getNextWeekdayDateISO(2)}
+- "próximo miércoles" / "este miércoles" → ${getNextWeekdayDateISO(3)}
+- "próximo jueves" / "este jueves" → ${getNextWeekdayDateISO(4)}
+- "próximo viernes" / "este viernes" → ${proximoViernes}
+- "próximo sábado" / "este sábado" → ${proximoSabado}
+- "próximo domingo" / "este domingo" → ${getNextWeekdayDateISO(0)}
+Si no menciona día → ${hoy}
+
+CLASIFICACION (una sola, exactamente así): Llamar | Visitar | Enviar mensaje | Cumpleaños | Regalo | Evento | Otro
+- llamar, telefonear, call → Llamar
+- escribir, escribirle, mensaje, whatsapp, wasap, texto, chat → Enviar mensaje
+- visitar, ir a ver, pasar → Visitar
+- cumpleaños, cumple → Cumpleaños
+- regalo → Regalo
+- evento, quedar, cita, reunión → Evento
+- si no encaja → Otro
+
+Ejemplo: "Llamar a María el próximo viernes" → {"esTarea":true,"vinculo":"María","clasificacion":"Llamar","fecha":"${proximoViernes}","hora":"09:00"}
+Ejemplo: "Escribirle a Juan mañana" → {"esTarea":true,"vinculo":"Juan","clasificacion":"Enviar mensaje","fecha":"${manana}","hora":"09:00"}`;
+}
+
+/**
  * Extrae datos de una TAREA FUTURA (agenda). Si el texto no es una tarea futura, devuelve null.
- * Usa prompt backend/prompts/gestos.txt y response_format json_object.
+ * Usa prompt backend/prompts/gestos.txt y contexto con fechas/reglas en el mensaje de usuario.
  * @param {string} texto - Texto transcrito
  * @param {string[]} nombresContactos - Nombres de contactos para desambiguar
  * @returns {Promise<{ vinculo: string, clasificacion: string, fecha: string, hora: string, usage?: object } | null>}
@@ -225,19 +292,18 @@ async function extractGesto(texto, nombresContactos = []) {
   if (!systemContent) {
     console.warn('Prompt gestos.txt vacío; usando fallback.');
   }
-  const listaNombres = nombresContactos.length
-    ? `Contactos (usa uno si aplica): ${nombresContactos.join(', ')}.`
-    : '';
-  const userContent = `${listaNombres}\n\nTexto: "${(texto || '').trim().slice(0, 1500)}"`;
+  const contexto = buildGestoUserContext(nombresContactos);
+  const textoUsuario = (texto || '').trim().slice(0, 1500);
+  const userContent = `${contexto}\n\n---\nTexto del usuario: "${textoUsuario}"\n\nResponde SOLO con el JSON (esTarea, vinculo, clasificacion, fecha, hora). Fecha y clasificacion deben seguir las reglas de arriba.`;
 
   const client = getClient();
   const completion = await client.chat.completions.create({
     model: MODEL_VOICE,
     messages: [
-      { role: 'system', content: systemContent || 'Extraes tareas futuras. Responde solo JSON con esTarea, vinculo, clasificacion, fecha, hora.' },
+      { role: 'system', content: systemContent || 'Extraes tareas futuras. Responde solo JSON con esTarea, vinculo, clasificacion, fecha, hora. Usa las fechas y clasificacion indicadas en el mensaje del usuario.' },
       { role: 'user', content: userContent }
     ],
-    temperature: 0.2,
+    temperature: 0.1,
     max_tokens: 256,
     response_format: { type: 'json_object' }
   });
@@ -253,11 +319,38 @@ async function extractGesto(texto, nombresContactos = []) {
 
   const hoy = getCurrentDateISO();
   let fecha = typeof parsed.fecha === 'string' ? parsed.fecha.trim().slice(0, 10) : hoy;
+  const fechaValida = /^\d{4}-\d{2}-\d{2}$/.test(fecha);
+  if (!fechaValida || fecha < hoy) {
+    // Fallback: intentar inferir fecha desde el texto del usuario (mañana, próximo viernes, etc.)
+    const textoLower = (texto || '').toLowerCase().trim();
+    if (textoLower.includes('mañana') && !textoLower.includes('pasado')) {
+      const d = new Date(); d.setDate(d.getDate() + 1); fecha = d.toISOString().slice(0, 10);
+    } else if (textoLower.includes('pasado mañana')) {
+      const d = new Date(); d.setDate(d.getDate() + 2); fecha = d.toISOString().slice(0, 10);
+    } else if (textoLower.includes('viernes')) fecha = getNextWeekdayDateISO(5);
+    else if (textoLower.includes('lunes')) fecha = getNextWeekdayDateISO(1);
+    else if (textoLower.includes('martes')) fecha = getNextWeekdayDateISO(2);
+    else if (textoLower.includes('miércoles') || textoLower.includes('miercoles')) fecha = getNextWeekdayDateISO(3);
+    else if (textoLower.includes('jueves')) fecha = getNextWeekdayDateISO(4);
+    else if (textoLower.includes('sábado') || textoLower.includes('sabado')) fecha = getNextWeekdayDateISO(6);
+    else if (textoLower.includes('domingo')) fecha = getNextWeekdayDateISO(0);
+    else if (!fechaValida || fecha < hoy) fecha = hoy;
+  }
   if (fecha < hoy) fecha = hoy;
 
   const clasificacionRaw = typeof parsed.clasificacion === 'string' ? parsed.clasificacion.trim() : 'Otro';
   const clasificacionNormalized = getDisplayPart(clasificacionRaw);
-  const clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(clasificacionNormalized) ? clasificacionNormalized : 'Otro';
+  let clasificacion = TIPOS_DE_GESTO_DISPLAY.includes(clasificacionNormalized) ? clasificacionNormalized : 'Otro';
+  // Fallback clasificación desde el texto: escribir/mensaje/whatsapp → Enviar mensaje; llamar → Llamar; etc.
+  if (clasificacion === 'Otro' && texto) {
+    const t = (texto || '').toLowerCase();
+    if (/\b(escribir|mensaje|whatsapp|wasap|texto|chat)\b/.test(t)) clasificacion = 'Enviar mensaje';
+    else if (/\b(llamar|telefonear|call)\b/.test(t)) clasificacion = 'Llamar';
+    else if (/\b(visitar|ir a ver|pasar)\b/.test(t)) clasificacion = 'Visitar';
+    else if (/\b(cumple|cumpleaños)\b/.test(t)) clasificacion = 'Cumpleaños';
+    else if (/\bregalo\b/.test(t)) clasificacion = 'Regalo';
+    else if (/\b(evento|quedar|cita|reunión|reunion)\b/.test(t)) clasificacion = 'Evento';
+  }
 
   let hora = typeof parsed.hora === 'string' ? parsed.hora.trim() : '09:00';
   const horaMatch = hora.match(/^(\d{1,2}):(\d{2})$/);
