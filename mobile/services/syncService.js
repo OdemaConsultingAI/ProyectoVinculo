@@ -737,8 +737,19 @@ export const deleteDesahogo = async (id) => {
   const idStr = id != null ? String(id).trim() : '';
   if (!idStr) throw new Error('ID de desahogo no válido.');
   const url = `${REFUGIO_URL}/desahogos/${encodeURIComponent(idStr)}/delete`;
-  await fetchWithAuth(url, { method: 'POST' });
-  return { success: true };
+  if (__DEV__) console.log('[deleteDesahogo] POST', url);
+  try {
+    await fetchWithAuth(url, { method: 'POST' });
+    return { success: true };
+  } catch (err) {
+    const status = err?.response?.status;
+    const msg = err?.message || '';
+    if (__DEV__) console.warn('[deleteDesahogo] Error', status, msg);
+    if (status === 404) {
+      throw new Error(`404 – La ruta no existe en el servidor. Comprueba que el backend en Render tenga la ruta POST /api/refugio/desahogos/:id/delete y que hayas hecho deploy reciente. URL llamada: ${url}`);
+    }
+    throw err;
+  }
 };
 
 /** Guardar tarea desde nota de voz: guarda la transcripción íntegra (sin audio). Requiere conexión. */
