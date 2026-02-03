@@ -17,7 +17,8 @@ const CONFIG = {
   }
 };
 
-export const API_BASE_URL = CONFIG[ENV].API_BASE_URL;
+const envConfig = CONFIG[ENV] || CONFIG.production;
+export const API_BASE_URL = envConfig.API_BASE_URL;
 export const ENVIRONMENT = ENV;
 
 // Indicador para la UI: "PC" (local) o "Nube" (Render)

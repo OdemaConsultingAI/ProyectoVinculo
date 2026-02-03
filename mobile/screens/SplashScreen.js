@@ -103,7 +103,7 @@ export default function SplashScreen({ onLoadingComplete }) {
         </View>
 
         {/* Título */}
-        <Text style={styles.title}>Vínculos</Text>
+        <Text style={styles.title}>Vínculo</Text>
         <Text style={styles.subtitle}>Gestiona tus relaciones importantes</Text>
 
         {/* Barra de progreso */}

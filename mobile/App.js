@@ -4,6 +4,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { StyleSheet, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import VinculosScreen from './screens/VinculosScreen';
 import GestosScreen from './screens/GestosScreen';
@@ -17,6 +18,8 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
 import AyudaContext from './context/AyudaContext';
 const { AyudaProvider } = AyudaContext;
+import { BienvenidaProvider } from './context/BienvenidaContext';
+import BienvenidaModal, { getBienvenidaNoMostrarKey } from './components/BienvenidaModal';
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import AyudaModal from './components/AyudaModal';
 import { isAuthenticated } from './services/authService';
@@ -93,6 +96,34 @@ export default function App() {
 
   const navigationRef = useRef(null);
   const [currentRouteName, setCurrentRouteName] = useState('Vínculos');
+  const [mostrarBienvenidaAlEntrar, setMostrarBienvenidaAlEntrar] = useState(false);
+
+  useEffect(() => {
+    if (!authenticated) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const valor = await AsyncStorage.getItem(getBienvenidaNoMostrarKey());
+        if (!cancelled && valor !== 'true') {
+          setMostrarBienvenidaAlEntrar(true);
+        }
+      } catch (e) {
+        if (!cancelled) setMostrarBienvenidaAlEntrar(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [authenticated]);
+
+  // Sincronizar ruta actual cuando el navegador está listo (para que el micrófono se muestre en Vínculos al entrar)
+  useEffect(() => {
+    if (!authenticated) return;
+    const id = setTimeout(() => {
+      const state = navigationRef.current?.getState?.();
+      const route = state?.routes?.[state?.index];
+      if (route?.name) setCurrentRouteName(route.name);
+    }, 150);
+    return () => clearTimeout(id);
+  }, [authenticated]);
 
   const handleLoginSuccess = () => {
     setAuthenticated(true);
@@ -128,9 +159,24 @@ export default function App() {
         <SafeAreaProvider>
           <VoiceGlobalProvider>
             <AyudaProvider>
+              <BienvenidaProvider
+                initialShow={mostrarBienvenidaAlEntrar}
+                onCloseBienvenida={async (noMostrar) => {
+                  if (noMostrar) {
+                    try {
+                      await AsyncStorage.setItem(getBienvenidaNoMostrarKey(), 'true');
+                    } catch (e) {}
+                  }
+                }}
+              >
               <View style={styles.root}>
                 <NavigationContainer
                 ref={navigationRef}
+                onReady={() => {
+                  const state = navigationRef.current?.getState?.();
+                  const route = state?.routes?.[state?.index];
+                  if (route?.name) setCurrentRouteName(route.name);
+                }}
                 onStateChange={(state) => {
                   const route = state?.routes?.[state.index];
                   if (route?.name) setCurrentRouteName(route.name);
@@ -179,7 +225,9 @@ export default function App() {
                   <GlobalVoiceOverlay navigationRef={navigationRef} currentRouteName={currentRouteName} />
                 </View>
                 <AyudaModal />
+                <BienvenidaModal />
               </View>
+              </BienvenidaProvider>
             </AyudaProvider>
           </VoiceGlobalProvider>
         </SafeAreaProvider>

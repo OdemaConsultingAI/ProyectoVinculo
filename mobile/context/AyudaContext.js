@@ -21,5 +21,5 @@ function useAyuda() {
   return ctx;
 }
 
-export { AyudaProvider, useAyuda };
-export default { AyudaProvider, useAyuda };
+export { AyudaProvider, useAyuda, AyudaContext };
+export default { AyudaProvider, useAyuda, AyudaContext };

@@ -20,7 +20,13 @@ const SECCIONES = [
     id: 'vinculos',
     icono: 'leaf',
     titulo: 'Vínculos',
-    texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: toca la burbuja para ver su ficha (momentos compartidos, atenciones pendientes, llamar o WhatsApp). Puedes agregar momentos y atenciones desde el icono del contacto o desde la pestaña Atenciones.',
+    texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: tócala para ver su ficha (momentos compartidos, atenciones pendientes, llamar o WhatsApp). Puedes agregar momentos y atenciones desde el icono del contacto o desde la pestaña Atenciones.',
+  },
+  {
+    id: 'vinculos-swipe',
+    icono: 'swap-horizontal',
+    titulo: 'Swipe e importar contactos',
+    texto: 'Para cargar contactos desde tu agenda: toca el icono naranja de flechas (↔) en la esquina superior derecha de Vínculos. Entras al modo «Cultivar relación»: desliza las tarjetas a la derecha para añadir a tus vínculos, o a la izquierda para pasar. También puedes importar contactos directamente con el botón «Importar contactos» dentro de ese modo, sin deslizar tarjeta por tarjeta.',
   },
   {
     id: 'atenciones',

@@ -91,6 +91,19 @@ export const loadContactsFromCache = async () => {
   }
 };
 
+// Limpiar datos de usuario al cerrar sesión (evitar que otro usuario vea datos del anterior)
+export const clearUserDataOnLogout = async () => {
+  try {
+    await AsyncStorage.multiRemove([
+      STORAGE_KEY_CONTACTOS,
+      STORAGE_KEY_SYNC_QUEUE,
+      STORAGE_KEY_LAST_SYNC,
+    ]);
+  } catch (error) {
+    console.error('Error limpiando datos de sync en logout:', error);
+  }
+};
+
 // Obtener timestamp de última sincronización
 export const getLastSyncTime = async () => {
   try {
@@ -358,14 +371,24 @@ export const deleteContact = async (contactoId) => {
   }
 };
 
-// Cargar contactos (con fallback a cache)
+// Normalizar teléfono para comparar (solo dígitos)
+const normalizarTelefono = (t) => (t && String(t).replace(/\D/g, '')) || '';
+
+// Cargar contactos (con fallback a cache). Mantiene contactos pendientes locales al traer del servidor.
 export const loadContacts = async () => {
   if (isOnline) {
     try {
       const response = await fetchWithAuth(API_URL);
       if (response.ok) {
-        const contactos = await response.json();
-        await saveContactsToCache(contactos);
+        const fromServer = await response.json();
+        const cached = await loadContactsFromCache();
+        const serverTelefonos = new Set(fromServer.map((c) => normalizarTelefono(c.telefono)));
+        const pendientes = cached.filter(
+          (c) => (c._isLocal || c._pendingSync) && !serverTelefonos.has(normalizarTelefono(c.telefono))
+        );
+        const contactos = pendientes.length ? [...fromServer, ...pendientes] : fromServer;
+        if (pendientes.length) await saveContactsToCache(contactos);
+        else await saveContactsToCache(fromServer);
         return { success: true, contactos, fromCache: false };
       }
     } catch (error) {

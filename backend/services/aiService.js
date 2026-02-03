@@ -72,8 +72,8 @@ function readPrompt(filename) {
 }
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
-/** Límite diario de consultas de IA (notas de voz) para usuarios Free. Premium sin límite. */
-const LIMITE_PETICIONES_GRATIS = 10;
+/** Límite diario de consultas de IA (notas de voz) para usuarios Free. Premium y Administrador sin límite. */
+const LIMITE_PETICIONES_GRATIS = 20;
 const COSTE_ESTIMADO_POR_PETICION_USD = 0.001;
 
 /** Precios por millón de tokens para gpt-4o-mini (USD). Fuente: platform.openai.com/docs/pricing */

@@ -4,11 +4,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import { useAyuda } from '../context/AyudaContext';
+import { useBienvenida } from '../context/BienvenidaContext';
 import { getUser, logout, changePassword, upgradeToPremium, getCurrentUser } from '../services/authService';
+import { clearUserDataOnLogout } from '../services/syncService';
+import { validatePassword, PASSWORD_REQUIREMENTS_TEXT } from '../utils/validations';
 import NotificationBell from '../components/NotificationBell';
 
 export default function ConfiguracionScreen({ onLogout }) {
   const { openAyuda } = useAyuda();
+  const { openBienvenida } = useBienvenida();
   const [usuario, setUsuario] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
@@ -54,12 +58,13 @@ export default function ConfiguracionScreen({ onLogout }) {
       return;
     }
 
-    if (nuevaPassword.length < 6) {
-      Alert.alert('Error', 'La nueva contraseña debe tener al menos 6 caracteres');
+    const passwordValidation = validatePassword(nuevaPassword);
+    if (!passwordValidation.valid) {
+      Alert.alert('Error', passwordValidation.error);
       return;
     }
 
-    if (nuevaPassword !== confirmarPassword) {
+    if (nuevaPassword.trim() !== confirmarPassword.trim()) {
       Alert.alert('Error', 'Las contraseñas no coinciden');
       return;
     }
@@ -118,6 +123,7 @@ export default function ConfiguracionScreen({ onLogout }) {
           style: 'destructive',
           onPress: async () => {
             await logout();
+            await clearUserDataOnLogout();
             if (onLogout) {
               onLogout();
             }
@@ -170,13 +176,43 @@ export default function ConfiguracionScreen({ onLogout }) {
               <Text style={styles.userName}>{usuario.nombre}</Text>
               <Text style={styles.userEmail}>{usuario.email}</Text>
               
-              {/* Uso de IA: día, mes y coste en dólares */}
+              {/* Tipo de usuario: Free, Premium o Administrador */}
+              <View style={styles.planContainer}>
+                <View style={[
+                  styles.planBadge,
+                  usuario.plan === 'Premium' && styles.planBadgePremium,
+                  usuario.plan === 'Administrador' && styles.planBadgeAdmin,
+                  usuario.plan === 'Free' && styles.planBadgeFree
+                ]}>
+                  <Ionicons 
+                    name={usuario.plan === 'Premium' ? 'star' : usuario.plan === 'Administrador' ? 'shield-checkmark' : 'star-outline'} 
+                    size={14} 
+                    color={usuario.plan === 'Premium' ? '#FFD700' : usuario.plan === 'Administrador' ? COLORES.agua : COLORES.textoSecundario} 
+                  />
+                  <Text style={[
+                    styles.planText,
+                    usuario.plan === 'Premium' && styles.planTextPremium,
+                    usuario.plan === 'Administrador' && styles.planTextAdmin
+                  ]}>
+                    {usuario.plan === 'Premium' ? 'Usuario Premium' : usuario.plan === 'Administrador' ? 'Administrador' : 'Plan Free'}
+                  </Text>
+                </View>
+              </View>
+
+              {/* Uso de IA: para Free mostrar X/20; Premium y Administrador sin límite */}
               <View style={styles.usageSection}>
                 <Text style={styles.usageSectionTitle}>Uso de IA (notas de voz)</Text>
-                <View style={styles.usageRow}>
-                  <Text style={styles.usageLabel}>Hoy:</Text>
-                  <Text style={styles.usageValue}>{usuario.aiPeticionesHoy ?? 0} interacciones</Text>
-                </View>
+                {usuario.plan === 'Free' && (usuario.limiteDiarioIA != null || usuario.aiPeticionesRestantes != null) ? (
+                  <View style={styles.usageRow}>
+                    <Text style={styles.usageLabel}>Hoy:</Text>
+                    <Text style={styles.usageValue}>{usuario.aiPeticionesHoy ?? 0} / {usuario.limiteDiarioIA ?? 20} interacciones</Text>
+                  </View>
+                ) : (
+                  <View style={styles.usageRow}>
+                    <Text style={styles.usageLabel}>Hoy:</Text>
+                    <Text style={styles.usageValue}>{usuario.aiPeticionesHoy ?? 0} interacciones</Text>
+                  </View>
+                )}
                 <View style={styles.usageRow}>
                   <Text style={styles.usageLabel}>Mes actual:</Text>
                   <Text style={styles.usageValue}>{Math.max(usuario.aiPeticionesMes ?? 0, usuario.aiPeticionesHoy ?? 0)} interacciones</Text>
@@ -184,26 +220,6 @@ export default function ConfiguracionScreen({ onLogout }) {
                 <View style={styles.usageRow}>
                   <Text style={styles.usageLabel}>Coste estimado (total):</Text>
                   <Text style={styles.usageValue}>${((usuario.aiEstimatedCostUsd ?? 0)).toFixed(4)} USD</Text>
-                </View>
-              </View>
-              
-              {/* Plan del usuario: mostrar "Usuario Premium" y ocultar botón si ya es Premium */}
-              <View style={styles.planContainer}>
-                <View style={[
-                  styles.planBadge,
-                  usuario.plan === 'Premium' ? styles.planBadgePremium : styles.planBadgeFree
-                ]}>
-                  <Ionicons 
-                    name={usuario.plan === 'Premium' ? 'star' : 'star-outline'} 
-                    size={14} 
-                    color={usuario.plan === 'Premium' ? '#FFD700' : COLORES.textoSecundario} 
-                  />
-                  <Text style={[
-                    styles.planText,
-                    usuario.plan === 'Premium' && styles.planTextPremium
-                  ]}>
-                    {usuario.plan === 'Premium' ? 'Usuario Premium' : `Plan ${usuario.plan || 'Free'}`}
-                  </Text>
                 </View>
               </View>
             </View>
@@ -256,8 +272,8 @@ export default function ConfiguracionScreen({ onLogout }) {
               )}
             </View>
 
-            {/* Botón Actualizar a Premium: solo visible si NO es Premium */}
-            {usuario.plan !== 'Premium' && (
+            {/* Botón Actualizar a Premium: solo visible para usuarios Free */}
+            {usuario.plan === 'Free' && (
               <TouchableOpacity 
                 style={styles.premiumButton} 
                 onPress={handleUpgradePremium}
@@ -272,6 +288,20 @@ export default function ConfiguracionScreen({ onLogout }) {
                   </>
                 )}
               </TouchableOpacity>
+            )}
+
+            {/* Sección Administración: solo visible para Administrador */}
+            {usuario.plan === 'Administrador' && (
+              <View style={styles.adminSection}>
+                <Text style={styles.adminSectionTitle}>Administración</Text>
+                <TouchableOpacity 
+                  style={styles.adminButton}
+                  onPress={() => Alert.alert('Próximamente', 'El panel de administración se desarrollará aquí.')}
+                >
+                  <Ionicons name="shield-checkmark" size={20} color="white" />
+                  <Text style={styles.adminButtonText}>Administrar</Text>
+                </TouchableOpacity>
+              </View>
             )}
 
             {/* Segundo: Compartir */}
@@ -317,6 +347,16 @@ export default function ConfiguracionScreen({ onLogout }) {
             >
               <Ionicons name="lock-closed-outline" size={22} color={COLORES.texto} />
               <Text style={styles.menuItemText}>Cambiar contraseña</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.menuItem}
+              onPress={() => {
+                setMenuHamburguesaVisible(false);
+                openBienvenida();
+              }}
+            >
+              <Ionicons name="book-outline" size={22} color={COLORES.texto} />
+              <Text style={styles.menuItemText}>Ver guía de bienvenida</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.menuItem, styles.menuItemLogout]}
@@ -377,6 +417,7 @@ export default function ConfiguracionScreen({ onLogout }) {
                   autoCapitalize="none"
                 />
               </View>
+              <Text style={styles.passwordRequirementsHint}>{PASSWORD_REQUIREMENTS_TEXT}</Text>
 
               <View style={styles.inputContainer}>
                 <Ionicons name="lock-closed-outline" size={20} color={COLORES.textoSuave} style={styles.inputIcon} />
@@ -606,6 +647,43 @@ const styles = StyleSheet.create({
   planTextPremium: {
     color: '#B8860B',
   },
+  planBadgeAdmin: {
+    backgroundColor: COLORES.aguaClaro || '#E8F4F8',
+    borderWidth: 1,
+    borderColor: COLORES.agua,
+  },
+  planTextAdmin: {
+    color: COLORES.agua,
+  },
+  adminSection: {
+    marginTop: 20,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    backgroundColor: COLORES.fondoSecundario || '#F5F7FA',
+    borderRadius: 12,
+  },
+  adminSectionTitle: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: COLORES.textoSecundario,
+    marginBottom: 10,
+  },
+  adminButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: COLORES.agua,
+    paddingHorizontal: 24,
+    paddingVertical: 14,
+    borderRadius: 12,
+    width: '100%',
+    gap: 8,
+  },
+  adminButtonText: {
+    color: 'white',
+    fontSize: 16,
+    fontWeight: '600',
+  },
   actionButton: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -737,6 +815,13 @@ const styles = StyleSheet.create({
   },
   modalScroll: {
     padding: 20,
+  },
+  passwordRequirementsHint: {
+    fontSize: 13,
+    color: COLORES.textoSecundario,
+    marginBottom: 12,
+    marginTop: -4,
+    paddingHorizontal: 4,
   },
   inputContainer: {
     flexDirection: 'row',

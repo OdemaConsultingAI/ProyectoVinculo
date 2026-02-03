@@ -15,6 +15,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { login, register } from '../services/authService';
 import { COLORES } from '../constants/colores';
+import { validatePassword, PASSWORD_REQUIREMENTS_TEXT } from '../utils/validations';
 
 // Funciones de validación
 const validateEmail = (email) => {
@@ -24,16 +25,6 @@ const validateEmail = (email) => {
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email.trim())) {
     return { valid: false, error: 'Por favor ingresa un email válido' };
-  }
-  return { valid: true };
-};
-
-const validatePassword = (password) => {
-  if (!password || password.trim() === '') {
-    return { valid: false, error: 'La contraseña es requerida' };
-  }
-  if (password.length < 6) {
-    return { valid: false, error: 'La contraseña debe tener al menos 6 caracteres' };
   }
   return { valid: true };
 };
@@ -110,13 +101,9 @@ export default function LoginScreen({ onLoginSuccess }) {
       }
 
       if (result.success) {
-        Alert.alert(
-          '¡Éxito!',
-          isLogin ? 'Inicio de sesión exitoso' : 'Registro exitoso',
-          [{ text: 'OK', onPress: () => onLoginSuccess() }]
-        );
+        onLoginSuccess();
       } else {
-        Alert.alert('Error', result.error || 'Ocurrió un error');
+        Alert.alert('Error', result.error || 'Ocurrió un error. Vuelve a intentarlo.');
       }
     } catch (error) {
       Alert.alert('Error', 'Ocurrió un error. Intenta nuevamente.');
@@ -194,6 +181,9 @@ export default function LoginScreen({ onLoginSuccess }) {
                 />
               </TouchableOpacity>
             </View>
+            {!isLogin && (
+              <Text style={styles.passwordRequirements}>{PASSWORD_REQUIREMENTS_TEXT}</Text>
+            )}
 
             {!isLogin && (
               <View style={styles.inputContainer}>
@@ -307,6 +297,13 @@ const styles = StyleSheet.create({
   },
   eyeIcon: {
     padding: 4,
+  },
+  passwordRequirements: {
+    fontSize: 13,
+    color: COLORES.textoSecundario,
+    marginBottom: 12,
+    marginTop: -4,
+    paddingHorizontal: 4,
   },
   button: {
     backgroundColor: COLORES.agua,

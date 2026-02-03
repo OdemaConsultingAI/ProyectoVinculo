@@ -4,6 +4,26 @@ import { API_BASE_URL } from '../constants/config';
 const TOKEN_KEY = '@vinculo_token';
 const USER_KEY = '@vinculo_user';
 
+// Claves que deben limpiarse al cerrar sesión (evitar confusión con otro usuario en el mismo dispositivo)
+const KEYS_TO_CLEAR_ON_LOGOUT = [
+  TOKEN_KEY,
+  USER_KEY,
+  '@vinculo_bienvenida_no_mostrar',
+  '@vinculos_expo_push_token',
+  '@notificaciones_vistas',
+  '@notificaciones_eliminadas',
+  '@ultima_revision_riego',
+];
+
+// Mensaje claro a partir de la respuesta de validación del backend (400 con details)
+const messageFromValidation = (data) => {
+  if (!data || !Array.isArray(data.details) || data.details.length === 0) {
+    return data?.error || null;
+  }
+  const messages = data.details.map((d) => d.message).filter(Boolean);
+  return messages.length ? messages.join(' ') : data.error || null;
+};
+
 // Función para registrar un nuevo usuario
 export const register = async (email, password, nombre) => {
   try {
@@ -34,8 +54,8 @@ export const register = async (email, password, nombre) => {
     }
 
     if (!response.ok) {
-      // 409 = email ya registrado; usar mensaje del backend
-      const message = data?.error || getErrorMessage(data) || `Error ${response.status}`;
+      // 400 = validación (password, email, nombre): mostrar mensajes concretos de details
+      const message = messageFromValidation(data) || data?.error || `Error ${response.status}`;
       return { success: false, error: message };
     }
 
@@ -53,7 +73,7 @@ export const register = async (email, password, nombre) => {
         error: `No se pudo conectar al servidor. Verifica que:\n1. El servidor esté corriendo\n2. La IP sea correcta: ${API_BASE_URL}\n3. Tengas conexión a internet` 
       };
     }
-    return { success: false, error: getErrorMessage(error) || `Error de conexión: ${error?.message}` };
+    return { success: false, error: error?.message || `Error de conexión` };
   }
 };
 
@@ -85,7 +105,7 @@ export const login = async (email, password) => {
     }
 
     if (!response.ok) {
-      const message = data?.error || getErrorMessage(data) || 'Credenciales inválidas';
+      const message = messageFromValidation(data) || data?.error || 'Credenciales inválidas';
       return { success: false, error: message };
     }
 
@@ -96,15 +116,14 @@ export const login = async (email, password) => {
     console.log('✅ Login exitoso');
     return { success: true, token: data.token, usuario: data.usuario };
   } catch (error) {
-    return { success: false, error: getErrorMessage(error) || error?.message || 'Error de conexión' };
+    return { success: false, error: error?.message || 'Error de conexión' };
   }
 };
 
-// Función para cerrar sesión
+// Función para cerrar sesión: quitar token, usuario y claves locales. La caché de contactos/sync debe limpiarse con clearUserDataOnLogout() desde quien llame a logout.
 export const logout = async () => {
   try {
-    await AsyncStorage.removeItem(TOKEN_KEY);
-    await AsyncStorage.removeItem(USER_KEY);
+    await AsyncStorage.multiRemove(KEYS_TO_CLEAR_ON_LOGOUT);
     return { success: true };
   } catch (error) {
     console.error('Error en logout:', error);
@@ -233,7 +252,8 @@ export const changePassword = async (currentPassword, newPassword) => {
     const data = await response.json();
 
     if (!response.ok) {
-      return { success: false, error: data.error || 'Error al cambiar contraseña' };
+      const message = messageFromValidation(data) || data?.error || 'Error al cambiar contraseña';
+      return { success: false, error: message };
     }
 
     return { success: true, message: data.message };

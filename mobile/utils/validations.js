@@ -36,22 +36,29 @@ export const validateEmail = (email) => {
   return { valid: true };
 };
 
-// Validar contraseña
+// Requisitos alineados con backend (middleware/validation.js)
+const PASSWORD_MIN_LENGTH = 6;
+const PASSWORD_HAS_LETTER_AND_NUMBER = /^(?=.*[a-zA-Z])(?=.*\d)/;
+
+// Validar contraseña (registro y cambio de contraseña)
 export const validatePassword = (password) => {
-  if (!password || password.length === 0) {
+  if (!password || password.trim().length === 0) {
     return { valid: false, error: 'La contraseña es requerida' };
   }
-  
-  if (password.length < 6) {
-    return { valid: false, error: 'La contraseña debe tener al menos 6 caracteres' };
+  const p = password.trim();
+  if (p.length < PASSWORD_MIN_LENGTH) {
+    return { valid: false, error: `La contraseña debe tener al menos ${PASSWORD_MIN_LENGTH} caracteres (tienes ${p.length})` };
   }
-  
-  if (password.length > 128) {
+  if (p.length > 128) {
     return { valid: false, error: 'La contraseña no puede tener más de 128 caracteres' };
   }
-  
+  if (!PASSWORD_HAS_LETTER_AND_NUMBER.test(p)) {
+    return { valid: false, error: 'La contraseña debe contener al menos una letra y un número' };
+  }
   return { valid: true };
 };
+
+export const PASSWORD_REQUIREMENTS_TEXT = `Requisitos: mínimo ${PASSWORD_MIN_LENGTH} caracteres, al menos una letra y un número.`;
 
 // Validar fecha de cumpleaños
 export const validateBirthday = (dia, mes, anio) => {

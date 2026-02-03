@@ -56,7 +56,7 @@ async function checkAILimitFreeUser(usuario) {
     usuario.aiUltimoResetFecha = hoy;
     await usuario.save();
   }
-  if (usuario.plan === 'Premium') return null;
+  if (usuario.plan === 'Premium' || usuario.plan === 'Administrador') return null;
   const peticionesHoy = usuario.aiPeticionesHoy ?? 0;
   if (peticionesHoy >= LIMITE_PETICIONES_GRATIS) {
     return createError(
@@ -396,18 +396,23 @@ app.get('/api/auth/me', authenticateToken, async (req, res, next) => {
 
     const hoy = usuario.aiPeticionesHoy ?? 0;
     const mes = usuario.aiPeticionesMes ?? 0;
+    const plan = usuario.plan || 'Free';
     // Mes acumulativo: al menos el valor de hoy (por si el documento no tenía el campo o no se persistió)
     const aiPeticionesMesMostrar = Math.max(mes, hoy);
+    const limiteDiarioIA = plan === 'Free' ? LIMITE_PETICIONES_GRATIS : null;
+    const aiPeticionesRestantes = plan === 'Free' ? Math.max(0, LIMITE_PETICIONES_GRATIS - hoy) : null;
 
     res.json({
       usuario: {
         id: usuario._id,
         email: usuario.email,
         nombre: usuario.nombre,
-        plan: usuario.plan || 'Free',
+        plan: plan,
         aiPeticionesHoy: hoy,
         aiPeticionesMes: aiPeticionesMesMostrar,
-        aiEstimatedCostUsd: usuario.aiEstimatedCostUsd ?? 0
+        aiEstimatedCostUsd: usuario.aiEstimatedCostUsd ?? 0,
+        limiteDiarioIA,
+        aiPeticionesRestantes
       }
     });
   } catch (error) {

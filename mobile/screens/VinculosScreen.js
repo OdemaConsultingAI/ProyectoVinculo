@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useMemo, useCallback, useContext } from 'react';
 import { 
   StyleSheet, 
   View, 
@@ -51,10 +51,8 @@ import { playFromBase64, startRecording } from '../services/voiceToTaskService';
 import HuellasModalContacto from '../components/HuellasModalContacto';
 import AtencionesModalContacto from '../components/AtencionesModalContacto';
 import { useVoiceGlobal } from '../context/VoiceGlobalContext';
-import AyudaContext from '../context/AyudaContext';
+import { AyudaContext } from '../context/AyudaContext';
 import NotificationBell from '../components/NotificationBell';
-
-const useAyuda = AyudaContext?.useAyuda ?? (() => ({ visible: false, openAyuda: () => {}, closeAyuda: () => {} }));
 const SCREEN_WIDTH = Dimensions.get('window').width;
 const SCREEN_HEIGHT = Dimensions.get('window').height;
 // Padding horizontal del grid (más aire a izquierda y derecha para que no se vean pegadas las burbujas)
@@ -87,6 +85,19 @@ const FRECUENCIAS = {
 
 const PRIORIDADES = ['💖 Alta', '✨ Media', '💤 Baja'];
 const CLASIFICACIONES = ['Familia', 'Mejor Amigo', 'Amigo', 'Trabajo', 'Conocido'];
+
+// Convierte URI file:// (expo-contacts) a data URI base64 para que las fotos persistan en APK/release
+async function fileUriToBase64DataUri(uri) {
+  if (!uri || typeof uri !== 'string' || !uri.startsWith('file://')) return uri;
+  try {
+    const FileSystem = require('expo-file-system/legacy');
+    const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64 });
+    return `data:image/jpeg;base64,${base64}`;
+  } catch (e) {
+    console.warn('No se pudo convertir foto a base64:', e);
+    return uri;
+  }
+}
 
 export default function VinculosScreen() {
   const route = useRoute();
@@ -129,7 +140,8 @@ export default function VinculosScreen() {
   const [dateMode, setDateMode] = useState('date');
   
   const { setVoicePreviewContactoFromModal, setCurrentContactForVoice, setVoiceRecording } = useVoiceGlobal();
-  const { openAyuda } = useAyuda();
+  const ayudaCtx = useContext(AyudaContext);
+  const openAyuda = ayudaCtx?.openAyuda ?? (() => {});
   const inputNuevaInteraccionRef = useRef(null);
   // Estados para modal de interacciones (historial, se pueden editar)
   const [modalInteraccionesVisible, setModalInteraccionesVisible] = useState(false);
@@ -877,9 +889,9 @@ export default function VinculosScreen() {
     cargarVinculos();
   };
 
-  const onSwipeComplete = (direction) => {
-    const idx = activeIndex.current;
-    const item = contactsRef.current[idx];
+  const onSwipeComplete = (direction, capturedIndex, capturedItem) => {
+    const idx = capturedIndex ?? activeIndex.current;
+    const item = capturedItem ?? contactsRef.current[idx];
     if (!item || !item.name) return;
 
     setPilaAcciones(prev => [...prev, { index: idx, tipo: direction === 'right' ? 'guardar' : 'descartar', item }]);
@@ -913,11 +925,15 @@ export default function VinculosScreen() {
   const forceSwipe = (direction) => {
     if (isSwiping.current || !position) return;
     if (currentIndex >= misContactos.length) return;
-    
+    const contactoMostrado = misContactos[currentIndex];
+    if (!contactoMostrado) return;
+
     isSwiping.current = true;
     const x = direction === 'right' ? SCREEN_WIDTH + 100 : -SCREEN_WIDTH - 100;
+    const idx = currentIndex;
+    const item = contactoMostrado;
     Animated.timing(position, { toValue: { x, y: 0 }, duration: 250, useNativeDriver: false }).start(() => {
-      onSwipeComplete(direction);
+      onSwipeComplete(direction, idx, item);
     });
   };
 
@@ -984,7 +1000,16 @@ export default function VinculosScreen() {
   // Funciones de servidor con sincronización offline
   const guardarEnServidor = async (datos) => {
     try {
-      const datosLimpios = { ...datos, telefono: limpiarTelefonoVisual(datos.telefono) };
+      // En APK/release las URIs file:// de contactos no son accesibles; convertir a base64 para persistir (no bloquear guardado si falla)
+      let fotoParaGuardar = datos.foto;
+      if (fotoParaGuardar && typeof fotoParaGuardar === 'string' && fotoParaGuardar.startsWith('file://')) {
+        try {
+          fotoParaGuardar = await fileUriToBase64DataUri(fotoParaGuardar);
+        } catch (_) {
+          fotoParaGuardar = '';
+        }
+      }
+      const datosLimpios = { ...datos, telefono: limpiarTelefonoVisual(datos.telefono), foto: fotoParaGuardar };
       
       // Limpiar campos internos antes de guardar
       const bodyData = { ...datosLimpios };
@@ -1624,7 +1649,7 @@ export default function VinculosScreen() {
           {/* Un solo círculo azul (color app), sin anillos exteriores; solo indicador "requiere atención" */}
           <View style={styles.burbujaWrapper}>
             <View style={styles.burbujaAzul}>
-              {item.foto && item.foto.length > 20 ? (
+              {item.foto && item.foto.length > 20 && !item.foto.startsWith('file://') ? (
                 <View style={styles.burbujaImagenContainer}>
                   <Image 
                     source={{ uri: item.foto }} 
@@ -1686,6 +1711,9 @@ export default function VinculosScreen() {
               <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+              <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
+            </TouchableOpacity>
           </View>
           <Text style={styles.gameTitle}>¡Terminaste!</Text>
           <Text style={{color: COLORES.textoSecundario, fontSize: 18, textAlign: 'center', marginTop: 20}}>
@@ -1711,6 +1739,9 @@ export default function VinculosScreen() {
               <TouchableOpacity onPress={cerrarModoJuego} style={styles.exitButton}>
                 <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
                 <Text style={styles.exitText}>Salir</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+                <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
               </TouchableOpacity>
             </View>
             <Text style={styles.gameTitle}>Error al cargar contacto</Text>
@@ -1827,6 +1858,9 @@ export default function VinculosScreen() {
               <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
+            <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+              <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
+            </TouchableOpacity>
           </View>
           <Text style={styles.gameTitle}>¿Cultivar relación?</Text>
           <View style={styles.cardArea}>
@@ -1913,44 +1947,6 @@ export default function VinculosScreen() {
     );
   }
 
-  if (vinculos.length === 0) {
-    return (
-      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
-        <GestureHandlerRootView style={{ flex: 1 }}>
-          <View style={styles.container}>
-            <View style={styles.headerContainer}>
-              <Text style={styles.header}>Vínculos</Text>
-            </View>
-            <View style={styles.emptyState}>
-              <View style={styles.emptyStateIconWrap}>
-                <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
-              </View>
-              <Text style={styles.emptyText}>No hay vínculos aún</Text>
-              <Text style={styles.emptySubtext}>Aquí aparecen las personas que eliges cultivar. Descubre contactos desde tu agenda con el botón de abajo. Usa el micrófono flotante para registrar momentos y atenciones.</Text>
-            </View>
-          </View>
-          {/* Botón flotante para modo swipe */}
-          <Animated.View
-            style={[
-              styles.floatingButton,
-              {
-                transform: [{ scale: pulseAnimation }],
-              }
-            ]}
-          >
-            <TouchableOpacity 
-              style={styles.floatingButtonInner}
-              onPress={activarModoJuego}
-              activeOpacity={0.8}
-            >
-              <Ionicons name="swap-horizontal" size={24} color="white" />
-            </TouchableOpacity>
-          </Animated.View>
-        </GestureHandlerRootView>
-      </SafeAreaView>
-    );
-  }
-
   const listaAgendaFiltrada = agendaTelefonica.filter(c => c.name.toLowerCase().includes(filtroAgenda.toLowerCase()));
 
   return (
@@ -1984,7 +1980,7 @@ export default function VinculosScreen() {
                       <View style={styles.photoWithBarContainer}>
                         <View style={styles.photoContainerCentered} pointerEvents="box-none">
                           <View style={styles.photoContainer}>
-                            {datosEditados.foto ? (
+                            {datosEditados.foto && !datosEditados.foto.startsWith('file://') ? (
                               <TouchableOpacity onPress={() => setModalFotoFullscreen(true)}>
                                 <Image key={datosEditados.foto.length} source={{ uri: datosEditados.foto }} style={styles.photo} />
                               </TouchableOpacity>
@@ -2032,7 +2028,7 @@ export default function VinculosScreen() {
                     console.error('Error calculando porcentaje de atención:', error);
                     return (
                       <View style={styles.photoContainer}>
-                        {datosEditados.foto ? (
+                        {datosEditados.foto && !datosEditados.foto.startsWith('file://') ? (
                           <TouchableOpacity onPress={() => setModalFotoFullscreen(true)}>
                             <Image key={datosEditados.foto.length} source={{ uri: datosEditados.foto }} style={styles.photo} />
                           </TouchableOpacity>
@@ -2653,11 +2649,11 @@ export default function VinculosScreen() {
               )}
             </View>
             <View style={styles.headerRight}>
-              <TouchableOpacity onPress={activarModoJuego} style={{ padding: 8 }} accessibilityLabel="Cultivar relación">
-                <Ionicons name="swap-horizontal-outline" size={24} color={COLORES.textoSuave} />
+              <TouchableOpacity onPress={activarModoJuego} style={[styles.headerIconButton, styles.headerIconButtonSwipe]} accessibilityLabel="Cultivar relación">
+                <Ionicons name="swap-horizontal-outline" size={24} color="white" />
               </TouchableOpacity>
-              <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
-                <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
+              <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+                <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
               </TouchableOpacity>
               <NotificationBell />
             </View>
@@ -2687,7 +2683,11 @@ export default function VinculosScreen() {
                 <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
               </View>
               <Text style={styles.emptyText}>No hay vínculos aún</Text>
-              <Text style={styles.emptySubtext}>Aquí aparecen las personas que eliges cultivar. Descubre contactos desde tu agenda. Usa el micrófono flotante para añadir momentos y atenciones.</Text>
+              <Text style={styles.emptyStateHint}>Toca este icono en la esquina superior derecha:</Text>
+              <View style={styles.emptyStateSwipeIconReplica}>
+                <Ionicons name="swap-horizontal-outline" size={28} color="white" />
+              </View>
+              <Text style={styles.emptySubtext}>Ahí empiezas a cargar tus contactos importantes desde tu agenda. Desliza las tarjetas a la derecha para añadirlos a tus vínculos.</Text>
             </View>
           }
         />
@@ -2710,7 +2710,7 @@ export default function VinculosScreen() {
             >
               <Ionicons name="close" size={32} color="white" />
             </TouchableOpacity>
-            {datosEditados.foto && (
+            {datosEditados.foto && !datosEditados.foto.startsWith('file://') && (
               <Image 
                 source={{ uri: datosEditados.foto }} 
                 style={styles.fotoFullscreen}
@@ -2767,7 +2767,7 @@ export default function VinculosScreen() {
                             activeOpacity={0.8}
                           >
                             <View style={styles.modalRegarBurbujaCircle}>
-                              {item.foto && item.foto.length > 20 ? (
+                              {item.foto && item.foto.length > 20 && !item.foto.startsWith('file://') ? (
                                 <Image source={{ uri: item.foto }} style={styles.modalRegarBurbujaImagen} />
                               ) : (
                                 <View style={styles.modalRegarBurbujaInicial}>
@@ -2787,7 +2787,7 @@ export default function VinculosScreen() {
               {pasoRegar === 'formulario' && contactoSeleccionadoParaRegar && (
                 <>
                   <View style={styles.modalRegarParaQuien}>
-                    {contactoSeleccionadoParaRegar.foto && contactoSeleccionadoParaRegar.foto.length > 20 ? (
+                    {contactoSeleccionadoParaRegar.foto && contactoSeleccionadoParaRegar.foto.length > 20 && !contactoSeleccionadoParaRegar.foto.startsWith('file://') ? (
                       <Image source={{ uri: contactoSeleccionadoParaRegar.foto }} style={styles.modalRegarAvatar} />
                     ) : (
                       <View style={styles.modalRegarAvatarPlaceholder}>
@@ -3003,6 +3003,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     marginBottom: 4,
+    flex: 1,
+    flexShrink: 1,
+    minWidth: 0,
   },
   headerIcon: {
     marginRight: 2,
@@ -3011,6 +3014,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
+    flexShrink: 0,
+    minWidth: 100,
+  },
+  headerIconButton: {
+    padding: 8,
+    minWidth: 40,
+    minHeight: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  headerIconButtonSwipe: {
+    backgroundColor: COLORES.atencion,
+    borderRadius: 999,
   },
   notificacionesButton: {
     position: 'relative',
@@ -3442,8 +3458,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 40,
-    paddingTop: 60,
+    paddingHorizontal: 20,
+    paddingTop: 48,
+    paddingBottom: 32,
   },
   emptyStateIconWrap: {
     width: 112,
@@ -3452,22 +3469,41 @@ const styles = StyleSheet.create({
     backgroundColor: COLORES.fondoSecundario,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 28,
+    marginBottom: 32,
     opacity: 0.85,
   },
   emptyText: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     color: COLORES.texto,
     marginTop: 8,
     textAlign: 'center',
   },
+  emptyStateHint: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: COLORES.texto,
+    marginTop: 28,
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  emptyStateSwipeIconReplica: {
+    width: 52,
+    height: 52,
+    borderRadius: 26,
+    backgroundColor: COLORES.atencion,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
   emptySubtext: {
     fontSize: 15,
     color: COLORES.textoSecundario,
-    marginTop: 14,
+    marginTop: 8,
     textAlign: 'center',
-    lineHeight: 23,
+    lineHeight: 24,
+    paddingHorizontal: 0,
+    alignSelf: 'stretch',
   },
   skeletonGrid: {
     flexDirection: 'row',
@@ -3516,10 +3552,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   gameHeader: {
+    flexDirection: 'row',
     width: '100%',
     paddingHorizontal: 20,
     marginBottom: 10,
     height: 40,
+    alignItems: 'center',
+    justifyContent: 'space-between',
   },
   exitButton: {
     flexDirection: 'row',
@@ -4337,6 +4376,9 @@ const styles = StyleSheet.create({
     backgroundColor: COLORES.agua,
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  floatingButtonSwipeInner: {
+    backgroundColor: COLORES.atencion,
     shadowColor: COLORES.agua,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,

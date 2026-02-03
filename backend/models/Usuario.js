@@ -22,14 +22,14 @@ const usuarioSchema = new mongoose.Schema({
   },
   plan: {
     type: String,
-    enum: ['Free', 'Premium'],
+    enum: ['Free', 'Premium', 'Administrador'],
     default: 'Free'
   },
   fechaRegistro: {
     type: Date,
     default: Date.now
   },
-  // Control de uso de IA (10 peticiones diarias gratuitas, luego medidor de coste)
+  // Control de uso de IA: Free 20/día; Premium y Administrador sin límite
   aiPeticionesHoy: { type: Number, default: 0 },
   aiUltimoResetFecha: { type: Date, default: null },
   aiPeticionesMes: { type: Number, default: 0 },
