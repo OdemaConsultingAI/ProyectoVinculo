@@ -29,6 +29,7 @@ const usuarioSchema = new mongoose.Schema({
     type: Date,
     default: Date.now
   },
+  lastLoginAt: { type: Date, default: null },
   // Control de uso de IA: Free 20/día; Premium y Administrador sin límite
   aiPeticionesHoy: { type: Number, default: 0 },
   aiUltimoResetFecha: { type: Date, default: null },

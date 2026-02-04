@@ -26,7 +26,6 @@ import { normalizeForMatch } from '../utils/validations';
 import { formatTime12h } from '../utils/dateTime';
 
 import { TIPOS_DE_GESTO_DISPLAY, GESTO_ICON_CONFIG } from '../constants/tiposDeGesto';
-
 const getGestoConfig = (clasificacion) => GESTO_ICON_CONFIG[clasificacion] || GESTO_ICON_CONFIG['Otro'];
 const TAB_BAR_OFFSET = 56;
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -220,13 +219,13 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     if (!modalGrabacionVisible) grabacionStartedRef.current = false;
   }, [modalGrabacionVisible]);
 
-  // Cargar contactos cuando el modal de preview o el de escribir está visible
+  // Cargar contactos cuando el menú del micrófono, el preview o el de escribir está visible (para saber si Huella/Atención están disponibles)
   useEffect(() => {
-    if (!modalVoicePreviewVisible && !voiceWriteModalVisible) return;
+    if (!semicircleMenuVisible && !modalVoicePreviewVisible && !voiceWriteModalVisible) return;
     loadContacts()
       .then((res) => setVinculos(Array.isArray(res?.contactos) ? res.contactos : []))
       .catch(() => setVinculos([]));
-  }, [modalVoicePreviewVisible, voiceWriteModalVisible]);
+  }, [semicircleMenuVisible, modalVoicePreviewVisible, voiceWriteModalVisible]);
 
   // Al abrir el modal de escribir (gesto/momento), inicializar fecha/hora a ahora
   useEffect(() => {
@@ -258,8 +257,15 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
     setVoiceRecording(recording);
   };
 
-  /** Al elegir Huella/Atención/Desahogo: abrir modal "Nota de voz" | "Escribir...". */
+  /** Al elegir Huella/Atención/Desahogo: abrir modal "Nota de voz" | "Escribir...". Huella y Atención requieren tener vínculos. */
   const onSelectTipoFromMenu = (tipo) => {
+    if ((tipo === 'gesto' || tipo === 'momento') && vinculos.length === 0) {
+      Alert.alert(
+        'Sin vínculos',
+        'Para agregar huellas o atenciones primero necesitas tener al menos un vínculo (contacto) en la pestaña Vínculos. Ve a Vínculos y usa el icono de agregar contacto para importar desde tu agenda.'
+      );
+      return;
+    }
     setVoiceSelectedTipo(tipo);
     setSemicircleMenuVisible(false);
     setModalModoVisible(true);
@@ -412,19 +418,23 @@ export default function GlobalVoiceOverlay({ navigationRef, currentRouteName = '
             ]}
             pointerEvents="box-none"
           >
-            {OPCIONES_TIPO.map((op) => (
-              <TouchableOpacity
-                key={op.id}
-                style={styles.semicircleMenuItem}
-                onPress={() => onSelectTipoFromMenu(op.id)}
-                activeOpacity={0.8}
-              >
-                <View style={styles.semicircleMenuIconWrap}>
-                  <Ionicons name={op.icon} size={20} color="white" />
-                </View>
-                <Text style={styles.semicircleMenuLabel} numberOfLines={1}>{op.label}</Text>
-              </TouchableOpacity>
-            ))}
+            {OPCIONES_TIPO.map((op) => {
+              const requiereVinculos = op.id === 'gesto' || op.id === 'momento';
+              const deshabilitado = requiereVinculos && vinculos.length === 0;
+              return (
+                <TouchableOpacity
+                  key={op.id}
+                  style={[styles.semicircleMenuItem, deshabilitado && styles.semicircleMenuItemDisabled]}
+                  onPress={() => deshabilitado ? Alert.alert('Inactivo', 'Huellas y atenciones requieren tener al menos un vínculo registrado. Ve a Vínculos y agrega un contacto desde tu agenda.') : onSelectTipoFromMenu(op.id)}
+                  activeOpacity={deshabilitado ? 1 : 0.8}
+                >
+                  <View style={[styles.semicircleMenuIconWrap, deshabilitado && styles.semicircleMenuIconWrapDisabled]}>
+                    <Ionicons name={op.icon} size={20} color={deshabilitado ? COLORES.textoSuave : 'white'} />
+                  </View>
+                  <Text style={[styles.semicircleMenuLabel, deshabilitado && styles.semicircleMenuLabelDisabled]} numberOfLines={1}>{op.label}</Text>
+                </TouchableOpacity>
+              );
+            })}
           </View>
           {/* FAB visible también cuando el menú está abierto (misma posición, amarillo) */}
           <View style={[styles.fabContainer, { bottom: bottomInset }]} pointerEvents="box-none">
@@ -1224,6 +1234,11 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
     elevation: 4,
   },
+  semicircleMenuItemDisabled: {
+    backgroundColor: COLORES.fondoSecundario ?? '#E9ECEF',
+    borderColor: COLORES.textoSuave ?? '#ADB5BD',
+    opacity: 0.9,
+  },
   semicircleMenuIconWrap: {
     width: 28,
     height: 28,
@@ -1231,10 +1246,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginBottom: 2,
   },
+  semicircleMenuIconWrapDisabled: {},
   semicircleMenuLabel: {
     fontSize: 9,
     fontWeight: '600',
     color: 'white',
+  },
+  semicircleMenuLabelDisabled: {
+    color: COLORES.textoSuave ?? '#8B95A5',
   },
   modalOverlay: {
     flex: 1,

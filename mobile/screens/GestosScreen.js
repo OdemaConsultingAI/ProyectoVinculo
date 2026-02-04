@@ -93,7 +93,6 @@ export default function GestosScreen() {
   const recordingPulseAnim = useRef(new Animated.Value(1)).current;
   const transcribeGenRef = useRef(0);
   const { openAyuda } = useAyuda();
-
   // Transcribir nota temporal con Whisper cuando se abre el modal con tempId (solo aplicar resultado de la última petición)
   useEffect(() => {
     if (!modalVoicePreviewVisible || !voicePreviewTempId) return;
@@ -705,7 +704,7 @@ export default function GestosScreen() {
           <TouchableOpacity onPress={() => setModalHistorialVisible(true)} style={{ padding: 8 }} accessibilityLabel="Historial de gestos">
             <Ionicons name="time-outline" size={24} color={COLORES.textoSuave} />
           </TouchableOpacity>
-          <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+          <TouchableOpacity onPress={() => openAyuda('atenciones')} style={{ padding: 8 }} accessibilityLabel="Ayuda">
             <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
           </TouchableOpacity>
           <NotificationBell />
@@ -871,16 +870,26 @@ export default function GestosScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="sparkles-outline" size={64} color={COLORES.textoSuave} />
             <Text style={styles.emptyText}>
-              {filtroActivo === 'Hoy' 
-                ? 'No hay atenciones para hoy' 
-                : filtroActivo === 'Semana'
-                ? 'No hay atenciones esta semana'
-                : filtroActivo === 'Mes'
-                ? 'No hay atenciones este mes'
-                : 'No hay atenciones'}
+              {contactos.length === 0
+                ? (filtroActivo === 'Hoy'
+                    ? 'No hay atenciones para hoy'
+                    : filtroActivo === 'Semana'
+                    ? 'No hay atenciones esta semana'
+                    : filtroActivo === 'Mes'
+                    ? 'No hay atenciones este mes'
+                    : 'No hay atenciones')
+                : (filtroActivo === 'Hoy'
+                    ? 'No hay atenciones para hoy'
+                    : filtroActivo === 'Semana'
+                    ? 'No hay atenciones esta semana'
+                    : filtroActivo === 'Mes'
+                    ? 'No hay atenciones este mes'
+                    : 'Pequeños gestos que quieres tener')}
             </Text>
             <Text style={styles.emptySubtext}>
-              Las atenciones son acciones que quieres tener con quienes te importan (llamar, escribir, visitar, felicitar…). Añade una con el micrófono flotante.
+              {contactos.length === 0
+                ? 'Para usar Atenciones necesitas al menos un vínculo. Ve a la pestaña Vínculos y agrega un contacto desde tu agenda.'
+                : 'Llamar, escribir, felicitar, visitar… Toca el micrófono flotante y elige "Atención".'}
             </Text>
           </View>
         }

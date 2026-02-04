@@ -1,4 +1,6 @@
 require('dotenv').config();
+const path = require('path');
+const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -89,6 +91,19 @@ async function incrementAIUsage(usuario, addCost = true, costUsd = undefined) {
   usuario.markModified('aiPeticionesHoy');
   usuario.markModified('aiPeticionesMes');
   await usuario.save();
+}
+
+/** Solo usuarios con plan Administrador pueden acceder a rutas /api/admin/* */
+async function requireAdmin(req, res, next) {
+  try {
+    const usuario = await Usuario.findById(req.user.id);
+    if (!usuario || usuario.plan !== 'Administrador') {
+      return res.status(403).json({ error: 'Solo administradores pueden acceder a esta sección' });
+    }
+    next();
+  } catch (err) {
+    next(err);
+  }
 }
 
 const app = express();
@@ -188,7 +203,8 @@ app.get('/', (req, res) => {
 app.get('/api/health', async (req, res, next) => {
   try {
     const estado = mongoose.connection.readyState;
-    const estados = ['desconectado', 'conectando', 'conectado', 'desconectando'];
+    // Mongoose: 0=disconnected, 1=connected, 2=connecting, 3=disconnecting
+    const estados = ['desconectado', 'conectado', 'conectando', 'desconectando'];
     res.json({
       estado: estados[estado] || 'desconocido',
       readyState: estado,
@@ -285,6 +301,9 @@ app.post('/api/auth/login', loginLimiter, validateLogin, normalizeEmail, async (
     }
 
     console.log('✅ Login exitoso para usuario:', usuario.email);
+
+    usuario.lastLoginAt = new Date();
+    await usuario.save();
 
     // Generar token
     const token = generateToken(usuario._id);
@@ -1564,6 +1583,205 @@ app.delete('/api/test/:id', authenticateToken, validateObjectId, async (req, res
   }
 });
 
+// ============================================
+// RUTAS ADMIN (acceso abierto sin auth por ahora)
+// ============================================
+
+// GET - Estadísticas globales para el panel administrativo
+app.get('/api/admin/stats', async (req, res, next) => {
+  try {
+    const now = new Date();
+    const hace7 = new Date(now);
+    hace7.setDate(hace7.getDate() - 7);
+    const hace30 = new Date(now);
+    hace30.setDate(hace30.getDate() - 30);
+
+    const [totalUsers, newUsers7, newUsers30, usersByPlan, totalContacts, aiTotals, interactionsResult] = await Promise.all([
+      Usuario.countDocuments(),
+      Usuario.countDocuments({ fechaRegistro: { $gte: hace7 } }),
+      Usuario.countDocuments({ fechaRegistro: { $gte: hace30 } }),
+      Usuario.aggregate([{ $group: { _id: '$plan', count: { $sum: 1 } } }]),
+      Contacto.countDocuments(),
+      Usuario.aggregate([
+        { $group: {
+          _id: null,
+          totalAIHoy: { $sum: { $ifNull: ['$aiPeticionesHoy', 0] } },
+          totalAIMes: { $sum: { $ifNull: ['$aiPeticionesMes', 0] } },
+          totalCostUsd: { $sum: { $ifNull: ['$aiEstimatedCostUsd', 0] } }
+        } }
+      ]),
+      Contacto.aggregate([
+        { $project: { size: { $size: { $ifNull: ['$interacciones', []] } } } },
+        { $group: { _id: null, total: { $sum: '$size' } } }
+      ])
+    ]);
+
+    const planMap = (usersByPlan || []).reduce((acc, p) => { acc[p._id || 'Free'] = p.count; return acc; }, { Free: 0, Premium: 0, Administrador: 0 });
+    const ai = aiTotals && aiTotals[0] ? aiTotals[0] : { totalAIHoy: 0, totalAIMes: 0, totalCostUsd: 0 };
+    const totalInteractions = (interactionsResult && interactionsResult[0] && interactionsResult[0].total) ? interactionsResult[0].total : 0;
+
+    res.json({
+      totalUsers,
+      newUsersLast7Days: newUsers7,
+      newUsersLast30Days: newUsers30,
+      usersByPlan: planMap,
+      totalContacts,
+      totalInteractions,
+      totalAIHoy: ai.totalAIHoy || 0,
+      totalAIMes: ai.totalAIMes || 0,
+      totalCostUsd: (Number(ai.totalCostUsd) || 0).toFixed(4),
+      generatedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET - Listado de usuarios con paginación y métricas por usuario (contactos, gestos, huellas, desahogos)
+app.get('/api/admin/users', async (req, res, next) => {
+  try {
+    const page = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, parseInt(req.query.limit, 10) || 20));
+    const skip = (page - 1) * limit;
+
+    const [users, total, aggContactos, aggGestos, aggDesahogos] = await Promise.all([
+      Usuario.find().select('-password').sort({ fechaRegistro: -1 }).skip(skip).limit(limit).lean(),
+      Usuario.countDocuments(),
+      Contacto.aggregate([
+        { $group: { _id: '$usuarioId', contactCount: { $sum: 1 }, interactionsCount: { $sum: { $size: { $ifNull: ['$interacciones', []] } } } } }
+      ]),
+      Contacto.aggregate([
+        { $project: { usuarioId: 1, gestosCount: { $size: { $ifNull: ['$tareas', []] } } } },
+        { $group: { _id: '$usuarioId', gestosCount: { $sum: '$gestosCount' } } }
+      ]),
+      Desahogo.aggregate([{ $group: { _id: '$usuarioId', desahogosCount: { $sum: 1 } } }])
+    ]);
+
+    const countsByUser = {};
+    (aggContactos || []).forEach(r => {
+      const id = r._id.toString();
+      countsByUser[id] = { contactCount: r.contactCount, interactionsCount: r.interactionsCount };
+    });
+    (aggGestos || []).forEach(r => {
+      const id = r._id.toString();
+      if (!countsByUser[id]) countsByUser[id] = { contactCount: 0, interactionsCount: 0 };
+      countsByUser[id].gestosCount = r.gestosCount;
+    });
+    (aggDesahogos || []).forEach(r => {
+      const id = r._id.toString();
+      if (!countsByUser[id]) countsByUser[id] = { contactCount: 0, interactionsCount: 0 };
+      countsByUser[id].desahogosCount = r.desahogosCount;
+    });
+
+    const list = users.map(u => {
+      const c = countsByUser[u._id.toString()] || {};
+      return {
+        id: u._id,
+        email: u.email,
+        nombre: u.nombre,
+        plan: u.plan || 'Free',
+        fechaRegistro: u.fechaRegistro,
+        lastLoginAt: u.lastLoginAt,
+        aiPeticionesHoy: u.aiPeticionesHoy ?? 0,
+        aiPeticionesMes: u.aiPeticionesMes ?? 0,
+        aiEstimatedCostUsd: u.aiEstimatedCostUsd ?? 0,
+        contactCount: c.contactCount ?? 0,
+        interactionsCount: c.interactionsCount ?? 0,
+        gestosCount: c.gestosCount ?? 0,
+        huellasCount: c.interactionsCount ?? 0,
+        desahogosCount: c.desahogosCount ?? 0
+      };
+    });
+
+    res.json({
+      users: list,
+      pagination: { page, limit, total, totalPages: Math.ceil(total / limit) }
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /admin/datos — Página HTML con datos ya insertados (sin JavaScript). Si el botón de /admin no funciona, usa esta URL.
+app.get('/admin/datos', async (req, res, next) => {
+  try {
+    const now = new Date();
+    const hace7 = new Date(now); hace7.setDate(hace7.getDate() - 7);
+    const hace30 = new Date(now); hace30.setDate(hace30.getDate() - 30);
+    const page = 1;
+    const limit = 50;
+    const skip = 0;
+
+    const [totalUsers, newUsers7, newUsers30, usersByPlan, totalContacts, aiTotals, interactionsResult, users, total] = await Promise.all([
+      Usuario.countDocuments(),
+      Usuario.countDocuments({ fechaRegistro: { $gte: hace7 } }),
+      Usuario.countDocuments({ fechaRegistro: { $gte: hace30 } }),
+      Usuario.aggregate([{ $group: { _id: '$plan', count: { $sum: 1 } } }]),
+      Contacto.countDocuments(),
+      Usuario.aggregate([{ $group: { _id: null, totalAIHoy: { $sum: { $ifNull: ['$aiPeticionesHoy', 0] } }, totalAIMes: { $sum: { $ifNull: ['$aiPeticionesMes', 0] } }, totalCostUsd: { $sum: { $ifNull: ['$aiEstimatedCostUsd', 0] } } } }]),
+      Contacto.aggregate([{ $project: { size: { $size: { $ifNull: ['$interacciones', []] } } } }, { $group: { _id: null, total: { $sum: '$size' } } }]),
+      Usuario.find().select('-password').sort({ fechaRegistro: -1 }).skip(skip).limit(limit).lean(),
+      Usuario.countDocuments()
+    ]);
+
+    const planMap = (usersByPlan || []).reduce((acc, p) => { acc[p._id || 'Free'] = p.count; return acc; }, { Free: 0, Premium: 0, Administrador: 0 });
+    const ai = aiTotals && aiTotals[0] ? aiTotals[0] : { totalAIHoy: 0, totalAIMes: 0, totalCostUsd: 0 };
+    const totalInteractions = (interactionsResult && interactionsResult[0] && interactionsResult[0].total) ? interactionsResult[0].total : 0;
+
+    const aggContactos = await Contacto.aggregate([{ $group: { _id: '$usuarioId', contactCount: { $sum: 1 }, interactionsCount: { $sum: { $size: { $ifNull: ['$interacciones', []] } } } } }]);
+    const aggGestos = await Contacto.aggregate([
+      { $project: { usuarioId: 1, gestosCount: { $size: { $ifNull: ['$tareas', []] } } } },
+      { $group: { _id: '$usuarioId', gestosCount: { $sum: '$gestosCount' } } }
+    ]);
+    const aggDesahogos = await Desahogo.aggregate([{ $group: { _id: '$usuarioId', desahogosCount: { $sum: 1 } } }]);
+
+    const countsByUser = {};
+    (aggContactos || []).forEach(r => {
+      const id = r._id.toString();
+      countsByUser[id] = { contactCount: r.contactCount, interactionsCount: r.interactionsCount };
+    });
+    (aggGestos || []).forEach(r => {
+      const id = r._id.toString();
+      if (!countsByUser[id]) countsByUser[id] = { contactCount: 0, interactionsCount: 0 };
+      countsByUser[id].gestosCount = r.gestosCount;
+    });
+    (aggDesahogos || []).forEach(r => {
+      const id = r._id.toString();
+      if (!countsByUser[id]) countsByUser[id] = { contactCount: 0, interactionsCount: 0 };
+      countsByUser[id].desahogosCount = r.desahogosCount;
+    });
+
+    const n = (v) => (v !== undefined && v !== null ? v : 0);
+    const fmt = (d) => (d ? new Date(d).toLocaleString('es') : '—');
+    const badge = (plan) => {
+      const c = plan === 'Premium' ? 'badgePremium' : plan === 'Administrador' ? 'badgeAdmin' : 'badgeFree';
+      return '<span class="badge ' + c + '">' + (plan || 'Free') + '</span>';
+    };
+
+    const userRows = (users || []).map(u => {
+      const counts = countsByUser[u._id.toString()] || {};
+      return '<tr><td>' + (u.email || '') + '</td><td>' + (u.nombre || '') + '</td><td>' + badge(u.plan) + '</td><td>' + fmt(u.fechaRegistro) + '</td><td>' + fmt(u.lastLoginAt) + '</td><td>' + n(counts.contactCount) + '</td><td>' + n(counts.gestosCount) + '</td><td>' + n(counts.interactionsCount) + '</td><td>' + n(counts.desahogosCount) + '</td><td>' + n(u.aiPeticionesHoy) + '</td><td>' + n(u.aiPeticionesMes) + '</td><td>' + (Number(u.aiEstimatedCostUsd || 0).toFixed(4)) + '</td></tr>';
+    }).join('');
+
+    const html = '<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Admin datos - Vínculo</title><style>body{font-family:sans-serif;margin:20px;background:#f5f7fa;} .c{max-width:1400px;margin:0 auto;} h1{color:#0d7377;} .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin:20px 0;} .card{background:#fff;padding:16px;border-radius:8px;box-shadow:0 1px 4px rgba(0,0,0,.08);} .card .v{font-size:24px;font-weight:700;color:#0d7377;} .card .l{font-size:12px;color:#666;} table{width:100%;border-collapse:collapse;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.08);border-radius:8px;overflow:hidden;} th,td{padding:10px;text-align:left;border-bottom:1px solid #eee;} th{background:#f0f0f0;} .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;} .badgeFree{background:#e9ecef;} .badgePremium{background:#fff3cd;} .badgeAdmin{background:#cce5ff;} a{color:#0d7377;}</style></head><body><div class="c"><h1>Vínculo – Datos admin</h1><p><a href="/admin">Volver al panel</a> | Generado ' + new Date().toISOString() + '</p><div class="cards"><div class="card"><div class="v">' + n(totalUsers) + '</div><div class="l">Total usuarios</div></div><div class="card"><div class="v">' + n(newUsers7) + '</div><div class="l">Registros 7 d.</div></div><div class="card"><div class="v">' + n(newUsers30) + '</div><div class="l">Registros 30 d.</div></div><div class="card"><div class="v">' + n(totalContacts) + '</div><div class="l">Contactos</div></div><div class="card"><div class="v">' + n(totalInteractions) + '</div><div class="l">Interacciones</div></div><div class="card"><div class="v">' + n(ai.totalAIHoy) + '</div><div class="l">IA hoy</div></div><div class="card"><div class="v">' + n(ai.totalAIMes) + '</div><div class="l">IA mes</div></div><div class="card"><div class="v">$' + (ai.totalCostUsd != null ? Number(ai.totalCostUsd).toFixed(4) : '0') + '</div><div class="l">Coste USD</div></div><div class="card"><div class="v">' + n(planMap.Free) + '</div><div class="l">Free</div></div><div class="card"><div class="v">' + n(planMap.Premium) + '</div><div class="l">Premium</div></div><div class="card"><div class="v">' + n(planMap.Administrador) + '</div><div class="l">Admin</div></div></div><h2>Usuarios (página 1 de ' + Math.ceil(total / limit) + ', total ' + total + ')</h2><table><thead><tr><th>Email</th><th>Nombre</th><th>Plan</th><th>Registro</th><th>Último acceso</th><th>Contactos</th><th>Gestos</th><th>Huellas</th><th>Desahogos</th><th>IA hoy</th><th>IA mes</th><th>Coste USD</th></tr></thead><tbody>' + userRows + '</tbody></table></div></body></html>';
+
+    res.set('Cache-Control', 'no-store');
+    res.type('html').send(html);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// /admin y /admin/ redirigen a la página que sí funciona (datos ya renderizados)
+app.get(['/admin', '/admin/'], function(req, res) {
+  res.redirect(302, '/admin/datos');
+});
+
+app.use('/admin', function(req, res, next) {
+  res.set('Cache-Control', 'no-store');
+  next();
+}, express.static(path.join(__dirname, 'admin-web'), { index: false }));
+
 // Error handler (debe ir al final, después de todas las rutas)
 app.use(errorHandler);
 
@@ -1572,5 +1790,6 @@ app.listen(PORT, HOST, () => {
   console.log("🚀 Servidor ejecutándose en puerto", PORT);
   console.log("🌐 Host:", HOST);
   console.log("💚 Health check: http://localhost:" + PORT + "/api/health");
+  console.log("📊 Panel admin (solo Administrador): http://localhost:" + PORT + "/admin");
   console.log("🔒 Seguridad: Helmet activado, Rate limiting activado");
 });

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin - Vínculo</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif; margin: 0; padding: 20px; background: #f5f7fa; color: #1a1a2e; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    h1 { color: #0d7377; margin-bottom: 8px; }
+    .subtitle { color: #666; margin-bottom: 24px; }
+    #loginPanel { background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); max-width: 400px; }
+    #loginPanel h2 { margin-top: 0; }
+    .formGroup { margin-bottom: 16px; }
+    .formGroup label { display: block; margin-bottom: 6px; font-weight: 600; color: #333; }
+    .formGroup input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 16px; }
+    button { padding: 12px 20px; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; border: none; }
+    .btnPrimary { background: #0d7377; color: #fff; }
+    .btnPrimary:hover { background: #0a5c5f; }
+    .btnSecondary { background: #6c757d; color: #fff; margin-left: 8px; }
+    .error { color: #c0392b; margin-top: 12px; padding: 10px; background: #fdeaea; border-radius: 8px; }
+    .hidden { display: none !important; }
+    #dashboardPanel { display: none; }
+    #dashboardPanel.visible { display: block; }
+    .headerRow { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+    .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px; margin-bottom: 32px; }
+    .card { background: #fff; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
+    .card .value { font-size: 28px; font-weight: 700; color: #0d7377; }
+    .card .label { font-size: 13px; color: #666; margin-top: 4px; }
+    .section { background: #fff; padding: 24px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 24px; }
+    .section h3 { margin-top: 0; margin-bottom: 16px; color: #333; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eee; }
+    th { background: #f8f9fa; font-weight: 600; color: #555; }
+    tr:hover { background: #f8fbfc; }
+    .loading { text-align: center; padding: 40px; color: #666; }
+    .pagination { margin-top: 16px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+    .pagination button { padding: 8px 14px; font-size: 14px; }
+    .pagination span { color: #666; font-size: 14px; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+    .badgeFree { background: #e9ecef; color: #495057; }
+    .badgePremium { background: #fff3cd; color: #856404; }
+    .badgeAdmin { background: #cce5ff; color: #004085; }
+    .emptyState { background: #fff; padding: 32px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 24px; text-align: center; color: #555; }
+    small { color: #888; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Vínculo – Panel de datos</h1>
+    <p class="subtitle">Estadísticas y usuarios (acceso directo, sin login).</p>
+    <p style="margin-bottom:20px;font-size:18px;">
+      <a href="/admin/datos" style="display:inline-block;padding:14px 28px;background:#0d7377;color:#fff;text-decoration:none;border-radius:8px;font-weight:bold;">Ver datos (abre página con estadísticas y usuarios)</a>
+    </p>
+    <p style="font-size:13px;color:#666;">Este enlace no usa JavaScript: al hacer clic verás la página con todos los datos. Si el botón «Cargar datos» no hace nada, usa el enlace de arriba.</p>
+    <div id="fileOriginWarning" class="error hidden" style="margin-bottom:16px;">Abre esta página desde el servidor: <strong>http://localhost:3000/admin</strong> (no abras el archivo .html desde el disco).</div>
+
+    <div id="loginPanel" class="hidden"></div>
+
+    <div id="dashboardPanel" class="visible">
+      <div class="headerRow">
+        <span><strong id="welcomeUser">Panel de datos</strong></span>
+        <span id="statusLine" style="font-size:13px;color:#666;"></span>
+        <a href="/api/admin/stats" id="linkStats" target="_blank" rel="noopener" style="font-size:12px;margin-left:8px;">Abrir /api/admin/stats (JSON)</a>
+        <button type="button" class="btnPrimary" id="btnCargar" style="padding:10px 20px;font-size:15px;" onclick="
+var s=document.getElementById('statusLine');
+var e=document.getElementById('errorBanner');
+var vacio=document.getElementById('emptyState');
+var cards=document.getElementById('statsCards');
+var sec=document.getElementById('sectionUsers');
+if(s)s.textContent='Clic recibido, cargando…';
+if(e){ e.textContent=''; e.style.display='none'; }
+if(vacio)vacio.style.display='none';
+if(cards){ cards.style.display='grid'; cards.innerHTML='<div class=\'loading\'>Cargando estadísticas…</div>'; }
+if(sec)sec.style.display='block';
+if(document.getElementById('usersTableWrap'))document.getElementById('usersTableWrap').innerHTML='<div class=\'loading\'>Cargando usuarios…</div>';
+if(typeof doCargar==='function'){ doCargar(); } else { if(e){ e.textContent='Error: recarga la página (Ctrl+F5).'; e.style.display='block'; } }
+">Cargar datos</button>
+        <button type="button" class="btnSecondary" id="btnRetry" style="padding:6px 12px;font-size:13px;">Reintentar</button>
+      </div>
+      <div id="errorBanner" class="error" style="margin-bottom:12px;display:none;"></div>
+
+      <div id="emptyState" class="emptyState">
+        <p>Pulsa <strong>«Cargar datos»</strong> para traer estadísticas y usuarios desde el servidor.</p>
+      </div>
+      <div class="cards" id="statsCards" style="display:none;"></div>
+
+      <div class="section" id="sectionUsers" style="display:none;">
+        <h3>Usuarios registrados</h3>
+        <div id="usersTableWrap"></div>
+        <div id="paginationWrap" class="pagination hidden"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Base URL del API: siempre misma origen para que el AJAX llegue al mismo servidor
+    var API = '';
+    if (typeof window !== 'undefined' && window.location.origin && window.location.protocol !== 'file:') {
+      API = window.location.origin;
+    }
+    var TOKEN_KEY = 'vinculo_admin_token';
+    var USER_KEY = 'vinculo_admin_user';
+
+    function getToken() { return localStorage.getItem(TOKEN_KEY); }
+    function setToken(t) { localStorage.setItem(TOKEN_KEY, t); }
+    function clearAuth() { localStorage.removeItem(TOKEN_KEY); localStorage.removeItem(USER_KEY); }
+    function getUser() { try { return JSON.parse(localStorage.getItem(USER_KEY)); } catch (e) { return null; } }
+    function setUser(u) { localStorage.setItem(USER_KEY, JSON.stringify(u)); }
+
+    function show(el) { el.classList.remove('hidden'); }
+    function hide(el) { el.classList.add('hidden'); }
+
+    function renderLogin() {
+      document.getElementById('loginPanel').classList.remove('hidden');
+      document.getElementById('dashboardPanel').classList.remove('visible');
+      document.getElementById('dashboardPanel').style.display = 'none';
+    }
+
+    function setStatus(txt) {
+      var el = document.getElementById('statusLine');
+      if (el) el.textContent = txt;
+    }
+    function setErrorBanner(txt) {
+      var el = document.getElementById('errorBanner');
+      if (!el) return;
+      el.textContent = txt || '';
+      el.style.display = (txt ? 'block' : 'none');
+    }
+
+    function doCargar() {
+      setStatus('Clic recibido, cargando…');
+      var base = API || (typeof window !== 'undefined' && window.location && window.location.origin) || '';
+      if (!base || base === 'null' || base.indexOf('http') !== 0) {
+        setErrorBanner('No se puede hacer AJAX: abre esta página desde el servidor (ej. http://localhost:3000/admin), no como archivo.');
+        return;
+      }
+      var emptyState = document.getElementById('emptyState');
+      var statsCards = document.getElementById('statsCards');
+      var sectionUsers = document.getElementById('sectionUsers');
+      if (emptyState) emptyState.style.display = 'none';
+      if (statsCards) { statsCards.style.display = 'grid'; statsCards.innerHTML = '<div class="loading">Cargando estadísticas…</div>'; }
+      if (sectionUsers) { sectionUsers.style.display = 'block'; }
+      var wrapUsers = document.getElementById('usersTableWrap');
+      if (wrapUsers) wrapUsers.innerHTML = '<div class="loading">Cargando usuarios…</div>';
+      setErrorBanner('');
+      setStatus('Pidiendo datos…');
+      loadStats();
+      loadUsers(1);
+    }
+
+    function renderStatsFromData(s) {
+      var wrap = document.getElementById('statsCards');
+      if (!wrap || !s || typeof s !== 'object') return;
+      var n = function(v) { return v !== undefined && v !== null ? v : 0; };
+      var plan = s.usersByPlan || {};
+      wrap.innerHTML = [
+        '<div class="card"><div class="value">' + n(s.totalUsers) + '</div><div class="label">Total usuarios</div></div>',
+        '<div class="card"><div class="value">' + n(s.newUsersLast7Days) + '</div><div class="label">Registros (7 d.)</div></div>',
+        '<div class="card"><div class="value">' + n(s.newUsersLast30Days) + '</div><div class="label">Registros (30 d.)</div></div>',
+        '<div class="card"><div class="value">' + n(s.totalContacts) + '</div><div class="label">Total contactos</div></div>',
+        '<div class="card"><div class="value">' + n(s.totalInteractions) + '</div><div class="label">Interacciones</div></div>',
+        '<div class="card"><div class="value">' + n(s.totalAIHoy) + '</div><div class="label">Uso IA hoy</div></div>',
+        '<div class="card"><div class="value">' + n(s.totalAIMes) + '</div><div class="label">Uso IA mes</div></div>',
+        '<div class="card"><div class="value">$' + (s.totalCostUsd != null ? String(s.totalCostUsd) : '0') + '</div><div class="label">Coste USD</div></div>',
+        '<div class="card"><div class="value">' + n(plan.Free) + '</div><div class="label">Free</div></div>',
+        '<div class="card"><div class="value">' + n(plan.Premium) + '</div><div class="label">Premium</div></div>',
+        '<div class="card"><div class="value">' + n(plan.Administrador) + '</div><div class="label">Administrador</div></div>'
+      ].join('');
+    }
+
+    function renderUsersFromData(data) {
+      var wrap = document.getElementById('usersTableWrap');
+      var pagWrap = document.getElementById('paginationWrap');
+      if (!wrap) return;
+      var users = (data && data.users) ? data.users : [];
+      var pagination = (data && data.pagination) ? data.pagination : {};
+      var badge = function(plan) {
+        var c = plan === 'Premium' ? 'badgePremium' : plan === 'Administrador' ? 'badgeAdmin' : 'badgeFree';
+        return '<span class="badge ' + c + '">' + (plan || 'Free') + '</span>';
+      };
+      var fmt = function(d) { return d ? new Date(d).toLocaleString('es') : '—'; };
+      var rows = (users || []).map(function(u) {
+        return '<tr><td>' + (u.email || '') + '</td><td>' + (u.nombre || '') + '</td><td>' + badge(u.plan) + '</td><td>' + fmt(u.fechaRegistro) + '</td><td>' + fmt(u.lastLoginAt) + '</td><td>' + (u.contactCount || 0) + '</td><td>' + (u.interactionsCount || 0) + '</td><td>' + (u.aiPeticionesHoy || 0) + '</td><td>' + (u.aiPeticionesMes || 0) + '</td><td>' + (Number(u.aiEstimatedCostUsd || 0).toFixed(4)) + '</td></tr>';
+      });
+      wrap.innerHTML = '<table><thead><tr><th>Email</th><th>Nombre</th><th>Plan</th><th>Registro</th><th>Último acceso</th><th>Contactos</th><th>Interacciones</th><th>IA hoy</th><th>IA mes</th><th>Coste USD</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+      if (pagWrap) pagWrap.innerHTML = '';
+      if (pagination && pagination.totalPages > 1) {
+        show(pagWrap);
+        var span = document.createElement('span');
+        span.className = 'pagination span';
+        span.textContent = 'Página ' + pagination.page + ' de ' + pagination.totalPages + ' (' + pagination.total + ' usuarios)';
+        pagWrap.appendChild(span);
+        if (pagination.page > 1) {
+          var prev = document.createElement('button');
+          prev.textContent = 'Anterior';
+          prev.className = 'btnSecondary';
+          prev.onclick = function() { loadUsers(pagination.page - 1); };
+          pagWrap.appendChild(prev);
+        }
+        if (pagination.page < pagination.totalPages) {
+          var next = document.createElement('button');
+          next.textContent = 'Siguiente';
+          next.className = 'btnPrimary';
+          next.onclick = function() { loadUsers(pagination.page + 1); };
+          pagWrap.appendChild(next);
+        }
+      }
+    }
+
+    /** AJAX: petición HTTP asíncrona (fetch). URL absoluta para evitar fallos de origen. */
+    function ajax(path, options) {
+      options = options || {};
+      var base = API || (typeof window !== 'undefined' && window.location.origin) || '';
+      var pathStr = (path && path.charAt(0) === '/') ? path : '/' + path;
+      var url = base + pathStr;
+      var token = getToken();
+      var headers = { 'Content-Type': 'application/json' };
+      if (options.headers) { var k; for (k in options.headers) headers[k] = options.headers[k]; }
+      if (token) headers['Authorization'] = 'Bearer ' + token;
+      var opts = { method: (options.method || 'GET'), headers: headers };
+      if (options.body) opts.body = options.body;
+      setStatus('GET ' + url);
+      return fetch(url, opts).then(function(res) {
+        var contentType = res.headers.get('content-type') || '';
+        if (contentType.indexOf('application/json') !== -1) {
+          return res.json().then(function(data) { return { ok: res.ok, status: res.status, data: data }; }).catch(function() { return { ok: res.ok, status: res.status, data: null }; });
+        }
+        return res.text().then(function(text) { return { ok: res.ok, status: res.status, data: text }; });
+      }).catch(function(e) {
+        var errMsg = (e && e.message) ? e.message : String(e);
+        return { ok: false, status: 0, data: { error: errMsg + ' | URL: ' + url } };
+      });
+    }
+
+    async function loadStats() {
+      var wrap = document.getElementById('statsCards');
+      if (!wrap) return;
+      setStatus('Pidiendo estadísticas…');
+      try {
+        var r = await ajax('/api/admin/stats');
+        if (!r.ok) {
+          var msg = (r.data && typeof r.data === 'object' && r.data.error) ? r.data.error : (typeof r.data === 'string' ? r.data.substring(0, 200) : 'HTTP ' + r.status);
+          setErrorBanner('Estadísticas: ' + msg);
+          setStatus('Error stats: ' + r.status);
+          wrap.innerHTML = '<div class="error">No se pudieron cargar las estadísticas. ' + msg + '</div>';
+          return;
+        }
+        setErrorBanner('');
+        var s = r.data;
+        if (!s || typeof s !== 'object') {
+          setStatus('Error: respuesta no es JSON');
+          wrap.innerHTML = '<div class="error">Respuesta inválida del servidor (no JSON).</div>';
+          return;
+        }
+        var n = function(v) { return v !== undefined && v !== null ? v : 0; };
+        var plan = s.usersByPlan || {};
+        wrap.innerHTML = [
+          '<div class="card"><div class="value">' + n(s.totalUsers) + '</div><div class="label">Total usuarios</div></div>',
+          '<div class="card"><div class="value">' + n(s.newUsersLast7Days) + '</div><div class="label">Registros (7 d.)</div></div>',
+          '<div class="card"><div class="value">' + n(s.newUsersLast30Days) + '</div><div class="label">Registros (30 d.)</div></div>',
+          '<div class="card"><div class="value">' + n(s.totalContacts) + '</div><div class="label">Total contactos</div></div>',
+          '<div class="card"><div class="value">' + n(s.totalInteractions) + '</div><div class="label">Interacciones</div></div>',
+          '<div class="card"><div class="value">' + n(s.totalAIHoy) + '</div><div class="label">Uso IA hoy</div></div>',
+          '<div class="card"><div class="value">' + n(s.totalAIMes) + '</div><div class="label">Uso IA mes</div></div>',
+          '<div class="card"><div class="value">$' + (s.totalCostUsd != null ? String(s.totalCostUsd) : '0') + '</div><div class="label">Coste USD</div></div>',
+          '<div class="card"><div class="value">' + n(plan.Free) + '</div><div class="label">Free</div></div>',
+          '<div class="card"><div class="value">' + n(plan.Premium) + '</div><div class="label">Premium</div></div>',
+          '<div class="card"><div class="value">' + n(plan.Administrador) + '</div><div class="label">Administrador</div></div>'
+        ].join('');
+        setStatus('Estadísticas OK. Cargando usuarios…');
+      } catch (e) {
+        var errMsg = e && e.message ? e.message : String(e);
+        setErrorBanner('Estadísticas: ' + errMsg);
+        setStatus('Error: ' + errMsg);
+        wrap.innerHTML = '<div class="error">Error al cargar: ' + errMsg + '</div>';
+      }
+    }
+
+    var currentPage = 1;
+    async function loadUsers(page) {
+      currentPage = page;
+      var wrap = document.getElementById('usersTableWrap');
+      var pagWrap = document.getElementById('paginationWrap');
+      if (!wrap) return;
+      try {
+        var r = await ajax('/api/admin/users?page=' + page + '&limit=20');
+        if (!r.ok) {
+          var msg = (r.data && typeof r.data === 'object' && r.data.error) ? r.data.error : (typeof r.data === 'string' ? r.data.substring(0, 200) : 'HTTP ' + r.status);
+          setErrorBanner((document.getElementById('errorBanner').textContent ? document.getElementById('errorBanner').textContent + ' | ' : '') + 'Usuarios: ' + msg);
+          setStatus('Error usuarios: ' + r.status);
+          wrap.innerHTML = '<div class="error">No se pudo cargar la lista. ' + msg + '</div>';
+          if (pagWrap) hide(pagWrap);
+          return;
+        }
+        setStatus('Listo. ' + (API || ''));
+        var data = r.data || {};
+        var users = data.users || [];
+        var pagination = data.pagination || {};
+        var badge = function(plan) {
+          var c = plan === 'Premium' ? 'badgePremium' : plan === 'Administrador' ? 'badgeAdmin' : 'badgeFree';
+          return '<span class="badge ' + c + '">' + (plan || 'Free') + '</span>';
+        };
+        var fmt = function(d) { return d ? new Date(d).toLocaleString('es') : '—'; };
+        var rows = (users || []).map(function(u) {
+          return '<tr><td>' +           (u.email || '') + '</td><td>' + (u.nombre || '') + '</td><td>' + badge(u.plan) + '</td><td>' + fmt(u.fechaRegistro) + '</td><td>' + fmt(u.lastLoginAt) + '</td><td>' + (u.contactCount || 0) + '</td><td>' + (u.interactionsCount || 0) + '</td><td>' + (u.aiPeticionesHoy || 0) + '</td><td>' + (u.aiPeticionesMes || 0) + '</td><td>' + (Number(u.aiEstimatedCostUsd || 0).toFixed(4)) + '</td></tr>';
+        });
+        wrap.innerHTML = '<table><thead><tr><th>Email</th><th>Nombre</th><th>Plan</th><th>Registro</th><th>Último acceso</th><th>Contactos</th><th>Interacciones</th><th>IA hoy</th><th>IA mes</th><th>Coste USD</th></tr></thead><tbody>' + rows.join('') + '</tbody></table>';
+        if (pagWrap) pagWrap.innerHTML = '';
+        if (pagination && pagination.totalPages > 1) {
+          show(pagWrap);
+          var span = document.createElement('span');
+          span.className = 'pagination span';
+          span.textContent = 'Página ' + pagination.page + ' de ' + pagination.totalPages + ' (' + pagination.total + ' usuarios)';
+          pagWrap.appendChild(span);
+          if (pagination.page > 1) {
+            var prev = document.createElement('button');
+            prev.textContent = 'Anterior';
+            prev.className = 'btnSecondary';
+            prev.onclick = function() { loadUsers(pagination.page - 1); };
+            pagWrap.appendChild(prev);
+          }
+          if (pagination.page < pagination.totalPages) {
+            var next = document.createElement('button');
+            next.textContent = 'Siguiente';
+            next.className = 'btnPrimary';
+            next.onclick = function() { loadUsers(pagination.page + 1); };
+            pagWrap.appendChild(next);
+          }
+        }
+      } catch (e) {
+        var errMsg = e && e.message ? e.message : String(e);
+        setErrorBanner('Usuarios: ' + errMsg);
+        setStatus('Error: ' + errMsg);
+        wrap.innerHTML = '<div class="error">Error al cargar usuarios: ' + errMsg + '</div>';
+        if (pagWrap) hide(pagWrap);
+      }
+    }
+
+    (function setupButtons() {
+      var btnCargar = document.getElementById('btnCargar');
+      var btnRetry = document.getElementById('btnRetry');
+      if (btnCargar) btnCargar.addEventListener('click', doCargar);
+      if (btnRetry) btnRetry.addEventListener('click', function() { setErrorBanner(''); setStatus('Reintentando…'); doCargar(); });
+    })();
+
+    (function init() {
+      try {
+        if (typeof window !== 'undefined' && window.location.protocol === 'file:') {
+          document.getElementById('fileOriginWarning').classList.remove('hidden');
+          return;
+        }
+        document.getElementById('loginPanel').classList.add('hidden');
+        setErrorBanner('');
+        var panel = document.getElementById('dashboardPanel');
+        if (panel) { panel.style.display = 'block'; panel.classList.add('visible'); }
+        setStatus('Pulsa «Cargar datos» para traer estadísticas y usuarios.');
+      } catch (err) {
+        var msg = err.message || String(err);
+        setErrorBanner('Error al iniciar: ' + msg);
+        if (document.getElementById('statusLine')) document.getElementById('statusLine').textContent = 'Error: ' + msg;
+      }
+    })();
+  </script>
+</body>
+</html>

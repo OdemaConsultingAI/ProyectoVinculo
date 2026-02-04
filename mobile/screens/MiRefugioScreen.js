@@ -238,7 +238,7 @@ export default function MiRefugioScreen() {
             <Text style={styles.headerTitle}>Mi Refugio</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+            <TouchableOpacity onPress={() => openAyuda('refugio')} style={{ padding: 8 }} accessibilityLabel="Ayuda">
               <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSecundario} />
             </TouchableOpacity>
             <NotificationBell />

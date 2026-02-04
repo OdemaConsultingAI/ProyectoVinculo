@@ -2,12 +2,20 @@ import React, { createContext, useContext, useState } from 'react';
 
 const AyudaContext = createContext(null);
 
+/** Contextos válidos: 'vinculos' | 'atenciones' | 'huellas' | 'refugio' | 'voz' | 'config' */
 function AyudaProvider({ children }) {
   const [visible, setVisible] = useState(false);
-  const openAyuda = () => setVisible(true);
-  const closeAyuda = () => setVisible(false);
+  const [seccionId, setSeccionId] = useState(null);
+  const openAyuda = (contexto) => {
+    setSeccionId(contexto ?? null);
+    setVisible(true);
+  };
+  const closeAyuda = () => {
+    setVisible(false);
+    setSeccionId(null);
+  };
   return (
-    <AyudaContext.Provider value={{ visible, openAyuda, closeAyuda }}>
+    <AyudaContext.Provider value={{ visible, seccionId, openAyuda, closeAyuda }}>
       {children}
     </AyudaContext.Provider>
   );
@@ -16,7 +24,7 @@ function AyudaProvider({ children }) {
 function useAyuda() {
   const ctx = useContext(AyudaContext);
   if (!ctx) {
-    return { visible: false, openAyuda: () => {}, closeAyuda: () => {} };
+    return { visible: false, seccionId: null, openAyuda: () => {}, closeAyuda: () => {} };
   }
   return ctx;
 }

@@ -143,6 +143,8 @@ export default function VinculosScreen() {
   const ayudaCtx = useContext(AyudaContext);
   const openAyuda = ayudaCtx?.openAyuda ?? (() => {});
   const inputNuevaInteraccionRef = useRef(null);
+  const addContactPulse = useRef(new Animated.Value(1)).current;
+  const addContactPulseLoopRef = useRef(null);
   // Estados para modal de interacciones (historial, se pueden editar)
   const [modalInteraccionesVisible, setModalInteraccionesVisible] = useState(false);
   const [modalHuellasContactoVisible, setModalHuellasContactoVisible] = useState(false);
@@ -239,6 +241,57 @@ export default function VinculosScreen() {
       clearInterval(connectionInterval);
     };
   }, []);
+
+  // Función para iniciar el parpadeo del botón agregar contacto (solo cuando no hay vínculos)
+  const startAddContactPulse = useCallback(() => {
+    addContactPulseLoopRef.current?.stop();
+    addContactPulseLoopRef.current = null;
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(addContactPulse, {
+          toValue: 0.55,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+        Animated.timing(addContactPulse, {
+          toValue: 1,
+          duration: 800,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    addContactPulseLoopRef.current = loop;
+    loop.start();
+  }, []);
+
+  const stopAddContactPulse = useCallback(() => {
+    addContactPulseLoopRef.current?.stop();
+    addContactPulseLoopRef.current = null;
+    addContactPulse.setValue(1);
+  }, []);
+
+  // Parpadeo sutil del botón agregar contacto cuando no hay vínculos; se reinicia al volver a la pestaña
+  useFocusEffect(
+    useCallback(() => {
+      if (vinculos.length > 0) {
+        stopAddContactPulse();
+        return;
+      }
+      startAddContactPulse();
+      return stopAddContactPulse;
+    }, [vinculos.length, startAddContactPulse, stopAddContactPulse])
+  );
+
+  // Reiniciar parpadeo al cerrar el modal Importar si aún no hay vínculos (el modal puede hacer perder el foco y parar el loop)
+  useEffect(() => {
+    if (vinculos.length > 0) {
+      stopAddContactPulse();
+      return;
+    }
+    if (!modalSelectorVisible) {
+      startAddContactPulse();
+    }
+  }, [modalSelectorVisible, vinculos.length, startAddContactPulse, stopAddContactPulse]);
 
   // Abrir modal de interacciones, modo swipe o contacto cuando se navega desde overlay/otra pestaña
   useFocusEffect(
@@ -1124,9 +1177,7 @@ export default function VinculosScreen() {
     };
     setGuardando(true);
     if (await guardarEnServidor(nuevo)) {
-      cargarVinculos(); // Actualiza la lista para marcar el contacto como importado
-      // El modal permanece abierto para permitir agregar más contactos
-      // El usuario puede cerrarlo manualmente cuando lo desee
+      cargarVinculos();
     } else {
       Alert.alert("Error", "No se pudo importar el contacto. Intenta nuevamente.");
     }
@@ -1711,7 +1762,7 @@ export default function VinculosScreen() {
               <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+            <TouchableOpacity onPress={() => openAyuda('vinculos')} style={styles.headerIconButton} accessibilityLabel="Ayuda">
               <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
             </TouchableOpacity>
           </View>
@@ -1740,7 +1791,7 @@ export default function VinculosScreen() {
                 <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
                 <Text style={styles.exitText}>Salir</Text>
               </TouchableOpacity>
-              <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+              <TouchableOpacity onPress={() => openAyuda('vinculos')} style={styles.headerIconButton} accessibilityLabel="Ayuda">
                 <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
               </TouchableOpacity>
             </View>
@@ -1767,10 +1818,31 @@ export default function VinculosScreen() {
           <Modal animationType="slide" visible={modalSelectorVisible} onRequestClose={() => setModalSelectorVisible(false)}>
             <SafeAreaView style={styles.modalFull}>
               <View style={styles.modalHeaderImportar}>
-                <Text style={styles.modalTitleImportar}>Importar 📒</Text>
-                <TouchableOpacity onPress={() => setModalSelectorVisible(false)} style={styles.modalCloseButton}>
-                  <Ionicons name="close" size={24} color={COLORES.agua} />
-                </TouchableOpacity>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.modalTitleImportar}>Importar 📒</Text>
+                  <Text style={styles.modalSubtitleImportar}>Tus vínculos son la base de la app: quienes importes aquí tendrán huellas, atenciones y recordatorios.</Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Alert.alert(
+                        'Cómo importar contactos',
+                        '• Los contactos que ves son los de la agenda de tu teléfono (Google, iCloud, SIM, etc.).\n\n' +
+                        '• Usa la búsqueda para encontrar a alguien por nombre.\n\n' +
+                        '• Toca un contacto para agregarlo como vínculo. Luego podrás configurar prioridad, frecuencia y recordatorios.\n\n' +
+                        '• Solo se muestran contactos que aún no están en tu lista de vínculos.',
+                        [{ text: 'Entendido' }]
+                      );
+                    }}
+                    style={styles.modalCloseButton}
+                    accessibilityLabel="Ayuda"
+                  >
+                    <Ionicons name="help-circle-outline" size={26} color={COLORES.agua} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => setModalSelectorVisible(false)} style={styles.modalCloseButton}>
+                    <Ionicons name="close" size={24} color={COLORES.agua} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <View style={styles.searchBarContainerModal}>
                 <Ionicons name="search" size={20} color={COLORES.textoSuave} style={styles.searchIcon} />
@@ -1781,6 +1853,11 @@ export default function VinculosScreen() {
                   onChangeText={setFiltroAgenda}
                   placeholderTextColor={COLORES.textoSuave}
                 />
+                {filtroAgenda.length > 0 && (
+                  <TouchableOpacity onPress={() => setFiltroAgenda('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.searchClearIcon}>
+                    <Ionicons name="close-circle" size={22} color={COLORES.textoSuave} />
+                  </TouchableOpacity>
+                )}
               </View>
               {listaAgendaFiltradaSwipe.length === 0 ? (
                 <View style={styles.emptyModalState}>
@@ -1858,7 +1935,7 @@ export default function VinculosScreen() {
               <Ionicons name="close-circle" size={32} color={COLORES.textoSuave} />
               <Text style={styles.exitText}>Salir</Text>
             </TouchableOpacity>
-            <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+            <TouchableOpacity onPress={() => openAyuda('vinculos')} style={styles.headerIconButton} accessibilityLabel="Ayuda">
               <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
             </TouchableOpacity>
           </View>
@@ -2495,10 +2572,31 @@ export default function VinculosScreen() {
         <Modal animationType="slide" visible={modalSelectorVisible} onRequestClose={() => setModalSelectorVisible(false)}>
           <SafeAreaView style={styles.modalFull}>
             <View style={styles.modalHeaderImportar}>
-              <Text style={styles.modalTitleImportar}>Importar 📒</Text>
-              <TouchableOpacity onPress={() => setModalSelectorVisible(false)} style={styles.modalCloseButton}>
-                <Ionicons name="close" size={24} color={COLORES.agua} />
-              </TouchableOpacity>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalTitleImportar}>Importar 📒</Text>
+                <Text style={styles.modalSubtitleImportar}>Tus vínculos son la base de la app: quienes importes aquí tendrán huellas, atenciones y recordatorios.</Text>
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                <TouchableOpacity
+                  onPress={() => {
+                    Alert.alert(
+                      'Cómo importar contactos',
+                      '• Los contactos que ves son los de la agenda de tu teléfono (Google, iCloud, SIM, etc.).\n\n' +
+                      '• Usa la búsqueda para encontrar a alguien por nombre.\n\n' +
+                      '• Toca un contacto para agregarlo como vínculo. Luego podrás configurar prioridad, frecuencia y recordatorios.\n\n' +
+                      '• Solo se muestran contactos que aún no están en tu lista de vínculos.',
+                      [{ text: 'Entendido' }]
+                    );
+                  }}
+                  style={styles.modalCloseButton}
+                  accessibilityLabel="Ayuda"
+                >
+                  <Ionicons name="help-circle-outline" size={26} color={COLORES.agua} />
+                </TouchableOpacity>
+                <TouchableOpacity onPress={() => setModalSelectorVisible(false)} style={styles.modalCloseButton}>
+                  <Ionicons name="close" size={24} color={COLORES.agua} />
+                </TouchableOpacity>
+              </View>
             </View>
             <View style={styles.searchBarContainerModal}>
               <Ionicons name="search" size={20} color={COLORES.textoSuave} style={styles.searchIcon} />
@@ -2509,6 +2607,11 @@ export default function VinculosScreen() {
                 onChangeText={setFiltroAgenda}
                 placeholderTextColor={COLORES.textoSuave || '#8e8e93'}
               />
+              {filtroAgenda.length > 0 && (
+                <TouchableOpacity onPress={() => setFiltroAgenda('')} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }} style={styles.searchClearIcon}>
+                  <Ionicons name="close-circle" size={22} color={COLORES.textoSuave} />
+                </TouchableOpacity>
+              )}
             </View>
             {cargando ? (
               <View style={styles.emptyModalState}>
@@ -2649,10 +2752,12 @@ export default function VinculosScreen() {
               )}
             </View>
             <View style={styles.headerRight}>
-              <TouchableOpacity onPress={activarModoJuego} style={[styles.headerIconButton, styles.headerIconButtonSwipe]} accessibilityLabel="Cultivar relación">
-                <Ionicons name="swap-horizontal-outline" size={24} color="white" />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={openAyuda} style={styles.headerIconButton} accessibilityLabel="Ayuda">
+              <Animated.View style={{ opacity: vinculos.length === 0 ? addContactPulse : 1 }}>
+                <TouchableOpacity onPress={abrirDirectorio} style={[styles.headerIconButton, styles.headerIconButtonSwipe]} accessibilityLabel="Importar contactos">
+                  <Ionicons name="person-add" size={24} color="white" />
+                </TouchableOpacity>
+              </Animated.View>
+              <TouchableOpacity onPress={() => openAyuda('vinculos')} style={styles.headerIconButton} accessibilityLabel="Ayuda">
                 <Ionicons name="help-circle-outline" size={26} color={COLORES.texto} />
               </TouchableOpacity>
               <NotificationBell />
@@ -2683,11 +2788,11 @@ export default function VinculosScreen() {
                 <Ionicons name="people-outline" size={72} color={COLORES.textoSuave} />
               </View>
               <Text style={styles.emptyText}>No hay vínculos aún</Text>
-              <Text style={styles.emptyStateHint}>Toca este icono en la esquina superior derecha:</Text>
+              <Text style={styles.emptyStateHint}>Toca el icono de agregar contacto en la esquina superior derecha:</Text>
               <View style={styles.emptyStateSwipeIconReplica}>
-                <Ionicons name="swap-horizontal-outline" size={28} color="white" />
+                <Ionicons name="person-add" size={28} color="white" />
               </View>
-              <Text style={styles.emptySubtext}>Ahí empiezas a cargar tus contactos importantes desde tu agenda. Desliza las tarjetas a la derecha para añadirlos a tus vínculos.</Text>
+              <Text style={styles.emptySubtext}>Se abrirá la importación desde tu agenda. Elige los contactos que quieras añadir a tus vínculos.</Text>
             </View>
           }
         />
@@ -3832,6 +3937,13 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: COLORES.texto,
   },
+  modalSubtitleImportar: {
+    fontSize: 13,
+    color: COLORES.textoSecundario || '#6B7280',
+    marginTop: 4,
+    lineHeight: 18,
+    maxWidth: 260,
+  },
   modalCloseButton: {
     padding: 4,
   },
@@ -3853,6 +3965,10 @@ const styles = StyleSheet.create({
   },
   searchIcon: {
     marginRight: 12,
+  },
+  searchClearIcon: {
+    marginLeft: 8,
+    padding: 4,
   },
   searchInputModal: {
     flex: 1,

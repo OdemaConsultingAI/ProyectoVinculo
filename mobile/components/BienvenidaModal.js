@@ -68,9 +68,8 @@ export default function BienvenidaModal() {
               <Text style={styles.bloqueTitulo}>Primeros pasos: cargar contactos</Text>
               <Text style={styles.bloqueTexto}>
                 • Entra en la pestaña <Text style={styles.bold}>Vínculos</Text>.{'\n'}
-                • Toca el icono de intercambio (↔) en la parte superior para abrir el modo «Cultivar relación».{'\n'}
-                • Desliza las tarjetas: a la derecha para añadir el contacto a tus vínculos, a la izquierda para pasar.{'\n'}
-                • También puedes usar el botón «Importar contactos» dentro de ese modo o añadir contactos desde el símbolo + cuando ya tengas vínculos.
+                • Toca el icono de agregar contacto (persona con +) en la esquina superior derecha de Vínculos para importar contactos desde tu agenda.{'\n'}
+                • Cuando ya tengas vínculos, puedes añadir más desde el símbolo +.
               </Text>
             </View>
 

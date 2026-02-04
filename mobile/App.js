@@ -19,7 +19,7 @@ import { VoiceGlobalProvider } from './context/VoiceGlobalContext';
 import AyudaContext from './context/AyudaContext';
 const { AyudaProvider } = AyudaContext;
 import { BienvenidaProvider } from './context/BienvenidaContext';
-import BienvenidaModal, { getBienvenidaNoMostrarKey } from './components/BienvenidaModal';
+import BienvenidaModal from './components/BienvenidaModal';
 import GlobalVoiceOverlay from './components/GlobalVoiceOverlay';
 import AyudaModal from './components/AyudaModal';
 import { isAuthenticated } from './services/authService';
@@ -96,23 +96,6 @@ export default function App() {
 
   const navigationRef = useRef(null);
   const [currentRouteName, setCurrentRouteName] = useState('Vínculos');
-  const [mostrarBienvenidaAlEntrar, setMostrarBienvenidaAlEntrar] = useState(false);
-
-  useEffect(() => {
-    if (!authenticated) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const valor = await AsyncStorage.getItem(getBienvenidaNoMostrarKey());
-        if (!cancelled && valor !== 'true') {
-          setMostrarBienvenidaAlEntrar(true);
-        }
-      } catch (e) {
-        if (!cancelled) setMostrarBienvenidaAlEntrar(true);
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [authenticated]);
 
   // Sincronizar ruta actual cuando el navegador está listo (para que el micrófono se muestre en Vínculos al entrar)
   useEffect(() => {
@@ -159,16 +142,7 @@ export default function App() {
         <SafeAreaProvider>
           <VoiceGlobalProvider>
             <AyudaProvider>
-              <BienvenidaProvider
-                initialShow={mostrarBienvenidaAlEntrar}
-                onCloseBienvenida={async (noMostrar) => {
-                  if (noMostrar) {
-                    try {
-                      await AsyncStorage.setItem(getBienvenidaNoMostrarKey(), 'true');
-                    } catch (e) {}
-                  }
-                }}
-              >
+              <BienvenidaProvider initialShow={false}>
               <View style={styles.root}>
                 <NavigationContainer
                 ref={navigationRef}

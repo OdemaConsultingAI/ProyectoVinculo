@@ -4,7 +4,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { COLORES } from '../constants/colores';
 import { useAyuda } from '../context/AyudaContext';
-import { useBienvenida } from '../context/BienvenidaContext';
 import { getUser, logout, changePassword, upgradeToPremium, getCurrentUser } from '../services/authService';
 import { clearUserDataOnLogout } from '../services/syncService';
 import { validatePassword, PASSWORD_REQUIREMENTS_TEXT } from '../utils/validations';
@@ -12,7 +11,6 @@ import NotificationBell from '../components/NotificationBell';
 
 export default function ConfiguracionScreen({ onLogout }) {
   const { openAyuda } = useAyuda();
-  const { openBienvenida } = useBienvenida();
   const [usuario, setUsuario] = useState(null);
   const [cargando, setCargando] = useState(true);
   const [modalCambiarPassword, setModalCambiarPassword] = useState(false);
@@ -158,7 +156,7 @@ export default function ConfiguracionScreen({ onLogout }) {
             <Text style={styles.title}>Configuración</Text>
           </View>
           <View style={styles.headerRight}>
-            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+            <TouchableOpacity onPress={() => openAyuda('config')} style={{ padding: 8 }} accessibilityLabel="Ayuda">
               <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSuave} />
             </TouchableOpacity>
             <NotificationBell />
@@ -347,16 +345,6 @@ export default function ConfiguracionScreen({ onLogout }) {
             >
               <Ionicons name="lock-closed-outline" size={22} color={COLORES.texto} />
               <Text style={styles.menuItemText}>Cambiar contraseña</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.menuItem}
-              onPress={() => {
-                setMenuHamburguesaVisible(false);
-                openBienvenida();
-              }}
-            >
-              <Ionicons name="book-outline" size={22} color={COLORES.texto} />
-              <Text style={styles.menuItemText}>Ver guía de bienvenida</Text>
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.menuItem, styles.menuItemLogout]}

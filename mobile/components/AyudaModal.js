@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
   Modal,
   View,
@@ -16,61 +16,46 @@ import { useAyuda } from '../context/AyudaContext';
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
 const SECCIONES = [
-  {
-    id: 'vinculos',
-    icono: 'leaf',
-    titulo: 'Vínculos',
-    texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: tócala para ver su ficha (momentos compartidos, atenciones pendientes, llamar o WhatsApp). Puedes agregar momentos y atenciones desde el icono del contacto o desde la pestaña Atenciones.',
-  },
-  {
-    id: 'vinculos-swipe',
-    icono: 'swap-horizontal',
-    titulo: 'Swipe e importar contactos',
-    texto: 'Para cargar contactos desde tu agenda: toca el icono naranja de flechas (↔) en la esquina superior derecha de Vínculos. Entras al modo «Cultivar relación»: desliza las tarjetas a la derecha para añadir a tus vínculos, o a la izquierda para pasar. También puedes importar contactos directamente con el botón «Importar contactos» dentro de ese modo, sin deslizar tarjeta por tarjeta.',
-  },
-  {
-    id: 'atenciones',
-    icono: 'footsteps-outline',
-    titulo: 'Atenciones',
-    texto: 'Las atenciones son acciones que quieres hacer por alguien (regar, llamar, quedar…). Aquí ves las atenciones pendientes y las completadas. Puedes filtrar por contacto y agregar atenciones eligiendo a la persona; también puedes guardar una nota de voz como atención. Las notificaciones te avisan de atenciones pendientes.',
-  },
-  {
-    id: 'huellas',
-    icono: 'footsteps-outline',
-    titulo: 'Huellas',
-    texto: 'Las huellas son los momentos que compartes con alguien (almorzar, llamar, quedar…). Aquí ves todas tus huellas ordenadas por fecha. Puedes filtrar por tiempo y por contacto, y agregar nuevas desde el botón +. Toca una huella para editarla.',
-  },
-  {
-    id: 'refugio',
-    icono: 'archive',
-    titulo: 'Mi Refugio',
-    texto: 'Espacio solo tuyo para desahogos en voz. Graba una nota de voz y guárdala como Desahogo: la app la transcribe y sugiere una etiqueta emocional (calma, estrés, gratitud, etc.), sin crear tareas ni atenciones. Escucha Retrospectiva: vuelve a escuchar un desahogo guardado. El Espejo: resumen semanal de tu estado de ánimo con IA.',
-  },
-  {
-    id: 'voz',
-    icono: 'mic',
-    titulo: 'Notas de voz',
-    texto: 'El micrófono flotante sirve para grabar una nota de voz en cualquier momento. La app transcribe el audio y sugiere si es un momento (interacción) o una atención (tarea), y con qué contacto. Puedes guardar como Atención (pestaña Atenciones), como Momento (para el contacto en Vínculos) o como Desahogo (Mi Refugio, sin vincular a nadie).',
-  },
-  {
-    id: 'config',
-    icono: 'settings',
-    titulo: 'Configuración',
-    texto: 'Cuenta: ver datos de sesión o cambiar contraseña. Notificaciones: activar o desactivar recordatorios de atenciones y avisos. Prueba de notificación: enviar un push de prueba. Cerrar sesión: salir de la app de forma segura.',
-  },
+  { id: 'vinculos', icono: 'leaf', titulo: 'Vínculos', texto: 'Esta pestaña es tu lista de personas importantes. Cada burbuja es un contacto: tócala para ver su ficha (momentos compartidos, atenciones pendientes, llamar o WhatsApp). Puedes agregar momentos y atenciones desde el icono del contacto o desde la pestaña Atenciones.' },
+  { id: 'vinculos-importar', icono: 'person-add', titulo: 'Agregar e importar contactos', texto: 'Para cargar contactos desde tu agenda: toca el icono naranja de agregar contacto (persona con +) en la esquina superior derecha de Vínculos. Se abrirá directamente la lista para importar: elige los contactos que quieras añadir a tus vínculos.' },
+  { id: 'atenciones', icono: 'footsteps-outline', titulo: 'Atenciones', texto: 'Las atenciones son acciones que quieres hacer por alguien (regar, llamar, quedar…). Necesitas tener al menos un vínculo (contacto) agregado en Vínculos para usar Atenciones. Aquí ves las atenciones pendientes y las completadas; puedes filtrar por contacto y agregar atenciones eligiendo a la persona, o guardar una nota de voz como atención. Las notificaciones te avisan de atenciones pendientes.' },
+  { id: 'huellas', icono: 'footsteps-outline', titulo: 'Huellas', texto: 'Las huellas son los momentos que compartes con alguien (almorzar, llamar, quedar…). Necesitas tener al menos un vínculo (contacto) agregado en Vínculos para usar Huellas. Aquí ves todas tus huellas ordenadas por fecha; puedes filtrar por tiempo y por contacto, y agregar nuevas desde el botón +. Toca una huella para editarla.' },
+  { id: 'refugio', icono: 'archive', titulo: 'Mi Refugio', texto: 'Espacio solo tuyo para desahogos en voz. Graba una nota de voz y guárdala como Desahogo: la app la transcribe y sugiere una etiqueta emocional (calma, estrés, gratitud, etc.), sin crear tareas ni atenciones. Escucha Retrospectiva: vuelve a escuchar un desahogo guardado. El Espejo: resumen semanal de tu estado de ánimo con IA.' },
+  { id: 'voz', icono: 'mic', titulo: 'Notas de voz', texto: 'El micrófono flotante sirve para grabar una nota de voz en cualquier momento. Huella y Atención solo están disponibles si ya tienes vínculos (contactos) agregados; Desahogo siempre está disponible. La app transcribe el audio y sugiere si es momento, atención o desahogo, y con qué contacto. Puedes guardar como Atención, como Huella (para el contacto en Vínculos) o como Desahogo (Mi Refugio, sin vincular a nadie).' },
+  { id: 'config', icono: 'settings', titulo: 'Configuración', texto: 'Cuenta: ver datos de sesión o cambiar contraseña. Notificaciones: activar o desactivar recordatorios de atenciones y avisos. Prueba de notificación: enviar un push de prueba. Cerrar sesión: salir de la app de forma segura.' },
 ];
 
+/** Qué secciones mostrar según el contexto desde el que se abrió la ayuda */
+const CONTEXTO_A_IDS = {
+  vinculos: ['vinculos', 'vinculos-importar'],
+  atenciones: ['atenciones'],
+  huellas: ['huellas'],
+  refugio: ['refugio'],
+  voz: ['voz'],
+  config: ['config'],
+};
+
 export default function AyudaModal() {
-  const { visible, closeAyuda } = useAyuda();
+  const { visible, seccionId, closeAyuda } = useAyuda();
   const [indice, setIndice] = useState(0);
+
+  const seccionesToShow = useMemo(() => {
+    if (seccionId && CONTEXTO_A_IDS[seccionId]) {
+      const ids = CONTEXTO_A_IDS[seccionId];
+      return SECCIONES.filter((s) => ids.includes(s.id));
+    }
+    return SECCIONES;
+  }, [seccionId]);
 
   useEffect(() => {
     if (visible) setIndice(0);
   }, [visible]);
 
-  const seccion = SECCIONES[indice];
+  const seccion = seccionesToShow[indice];
   const esPrimera = indice === 0;
-  const esUltima = indice === SECCIONES.length - 1;
+  const esUltima = indice === seccionesToShow.length - 1;
+
+  if (!seccion) return null;
 
   const irAnterior = () => {
     if (!esPrimera) setIndice((i) => i - 1);
@@ -113,11 +98,13 @@ export default function AyudaModal() {
               <Text style={styles.sectionText}>{seccion.texto}</Text>
             </View>
 
+            {seccionesToShow.length > 1 && (
             <View style={styles.pagination}>
               <Text style={styles.paginationText}>
-                {indice + 1} / {SECCIONES.length}
+                {indice + 1} / {seccionesToShow.length}
               </Text>
             </View>
+            )}
 
             <View style={styles.footer}>
               <TouchableOpacity

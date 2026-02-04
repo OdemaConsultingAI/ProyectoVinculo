@@ -54,7 +54,6 @@ export default function HuellasScreen() {
   const [datePickerModeEdit, setDatePickerModeEdit] = useState('date');
 
   const { openAyuda } = useAyuda();
-
   useFocusEffect(
     useCallback(() => {
       cargarDatos();
@@ -324,7 +323,7 @@ export default function HuellasScreen() {
             <Text style={styles.headerTitle}>Huellas</Text>
           </View>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-            <TouchableOpacity onPress={openAyuda} style={{ padding: 8 }} accessibilityLabel="Ayuda">
+            <TouchableOpacity onPress={() => openAyuda('huellas')} style={{ padding: 8 }} accessibilityLabel="Ayuda">
               <Ionicons name="help-circle-outline" size={26} color={COLORES.textoSecundario} />
             </TouchableOpacity>
             <NotificationBell />
@@ -425,18 +424,30 @@ export default function HuellasScreen() {
           <View style={styles.emptyState}>
             <Ionicons name="footsteps-outline" size={64} color={COLORES.textoSecundario} />
             <Text style={styles.emptyText}>
-              {filtroActivo === 'Hoy'
-                ? 'No hay huellas para hoy'
-                : filtroActivo === 'Esta semana'
-                ? 'No hay huellas esta semana'
-                : filtroActivo === 'La semana pasada'
-                ? 'No hay huellas la semana pasada'
-                : filtroActivo === 'El mes pasado'
-                ? 'No hay huellas el mes pasado'
-                : 'No hay huellas'}
+              {contactos.length === 0
+                ? (filtroActivo === 'Hoy'
+                    ? 'No hay huellas para hoy'
+                    : filtroActivo === 'Esta semana'
+                    ? 'No hay huellas esta semana'
+                    : filtroActivo === 'La semana pasada'
+                    ? 'No hay huellas la semana pasada'
+                    : filtroActivo === 'El mes pasado'
+                    ? 'No hay huellas el mes pasado'
+                    : 'No hay huellas')
+                : (filtroActivo === 'Hoy'
+                    ? 'No hay huellas para hoy'
+                    : filtroActivo === 'Esta semana'
+                    ? 'No hay huellas esta semana'
+                    : filtroActivo === 'La semana pasada'
+                    ? 'No hay huellas la semana pasada'
+                    : filtroActivo === 'El mes pasado'
+                    ? 'No hay huellas el mes pasado'
+                    : 'Momentos compartidos con tus vínculos')}
             </Text>
             <Text style={styles.emptySubtext}>
-              Las huellas son los momentos que compartes con cada contacto (almorzar, llamar, quedar…). Añade una con el micrófono flotante.
+              {contactos.length === 0
+                ? 'Para usar Huellas necesitas al menos un vínculo. Ve a la pestaña Vínculos y agrega un contacto desde tu agenda.'
+                : 'Registra almuerzos, llamadas, quedadas… Toca el micrófono flotante y elige "Huella".'}
             </Text>
           </View>
         }
